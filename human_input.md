@@ -1,0 +1,1 @@
+the test works across one scene... is the softwr e programmed to do more than on scene... whats the strucutre expected? 3 Act,5 Act... chain scenes until the end condiiton of what exaclty? 

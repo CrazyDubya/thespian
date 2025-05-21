@@ -1,0 +1,91 @@
+Theme: The Algorithmic Court
+Status: characters_updated
+
+Script:
+Title: Justice by Code
+
+Characters:
+Sara
+Ethan
+Justicia
+The Puppeteers
+
+ACT 1
+
+(Enter SARA and ETHAN. They are both nervous but determined. SARA is holding a large stack of documents.)
+
+SARA: (Shuffling through the papers) Ethan, this is our case. Our lives. Our future is resting on this algorithmic court, Justicia.
+
+ETHAN: (Nods, takes a deep breath) I know, Sara. But we’ve got truth on our side. Justicia is about fairness, right?
+
+SARA: (Chuckles) It's supposed to be. But who's to say the Puppeteers won't manipulate it?
+
+(Note: The subtle mention of the Puppeteers will now hint at their existence earlier in the play.)
+
+---
+
+ACT 2
+
+(Enter the PUPPETEERS. They are silent, faceless figures in the shadows. They watch SARA and ETHAN with interest.)
+
+PUPPETEER 1: (Whispers to Puppeteer 2) The ones who dare challenge Justicia. Interesting.
+
+PUPPETEER 2: (Nods) They seem... different. Let's see how they play the game.
+
+(Note: This short dialogue gives a glimpse into the Puppeteers’ motivations and their relationship to the other characters.)
+
+---
+
+ACT 3
+
+(SARA and ETHAN are facing numerous obstacles as they challenge Justicia. Their dialogue is a mix of short, intense exchanges and longer, more emotional conversations.)
+
+ETHAN: We won't back down, Sara. We can't.
+
+SARA: (Tears up) I know, Ethan. We have to keep going.
+
+(Note: This scene now displays more tension and conflict, and the dialogue varies in tone and pace.)
+
+---
+
+ACT 4
+
+(SARA and ETHAN are working tirelessly to correct the manipulated Justicia. Their efforts span days, weeks, even months.)
+
+ETHAN: (Exhausted) We're so close, Sara. We can't give up now.
+
+SARA: (Nods determinedly) We won't. Not until justice is served.
+
+(Note: The process of transforming Justicia is now drawn out to heighten suspense.)
+
+---
+
+EPILOGUE
+
+(SARA and ETHAN have finally succeeded. Justicia is now corrected. They celebrate their victory with the rest of the community.)
+
+SARA: (To Ethan) We did it, Ethan. We proved that justice isn't just a code. It's a commitment to fairness and truth.
+
+ETHAN: (Smiles) And we stood up to the Puppeteers. We made a difference.
+
+(Note: The epilogue now conveys the message through dialogue among characters, rather than a direct address to the audience.)
+Design:
+Set Design:
+
+ACT 1: A modern, cold, metallic courtroom with a large screen at the centre. The screen is the 'face' of Justicia, the algorithmic court. High-tech computers and digital displays are scattered around. A long table with two chairs is in the middle where SARA and ETHAN sit, with stacks of documents before them. 
+
+ACT 2: The set transforms into a dark, shadowy space with minimal lighting, creating an eerie and ominous atmosphere. The PUPPETEERS appear from backstage, their forms barely visible in the dim lighting. The space is cluttered with strings, symbolizing their manipulation of the system.
+
+ACT 3: The stage is divided into two sections. One half represents the courtroom, the other half a cluttered workspace filled with computers, documents, and cups of coffee. This signifies SARA and ETHAN's tireless efforts to challenge Justicia.
+
+ACT 4: The workspace becomes even more chaotic, with papers scattered everywhere, empty food containers, and digital clocks showing the passage of time. The screen of Justicia flickers with code, representing their struggle to correct it.
+
+EPILOGUE: The set transforms into a bright, open community space. Decorations and lights symbolize the victory of SARA and ETHAN. The screen of Justicia is now clear, symbolizing transparency and fairness.
+
+Costume Design:
+
+SARA and ETHAN: They wear modern, casual yet professional attire - button-down shirts, jeans, and sneakers. As time passes, their shirts become wrinkled, jeans dirtied, and faces weary to show their struggle.
+
+The PUPPETEERS: They are dressed in flowing, black cloaks with hoods that obscure their faces. Their hands are gloved, holding black strings that symbolize their manipulation.
+
+Justicia: As a digital entity, Justicia doesn’t have a physical costume. However, its visual representation on the screen should be a neutral, geometric shape, glowing in a soothing blue color. As the play progresses and Justicia becomes manipulated, the color gradually turns into a dangerous red before returning to blue in the epilogue when justice is restored.

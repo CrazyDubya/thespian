@@ -1,0 +1,369 @@
+from textual.widget import Widget  # Base class
+from textual.widgets import Static, Label, Markdown, ProgressBar, Button, ListView, ListItem
+from textual.containers import VerticalScroll, Horizontal, Vertical, Container
+from textual.reactive import reactive
+from textual.message import Message
+from typing import Optional, Dict, Any, TYPE_CHECKING, List, Callable, Union, TypeVar, cast
+from dataclasses import dataclass, field
+from datetime import datetime
+
+if TYPE_CHECKING:
+    from .state import Scene  # Forward reference for type hinting
+
+T = TypeVar('T')
+
+class SceneSelected(Message):
+    """Message sent when a scene is selected in the library."""
+
+    def __init__(self, scene_id: str) -> None:
+        super().__init__()
+        self.scene_id = scene_id
+
+
+class GenerateSceneContent(Message):
+    """Message to request generating content for a scene."""
+
+    def __init__(self, scene_id: str) -> None:
+        super().__init__()
+        self.scene_id = scene_id
+
+
+class StopGeneration(Message):
+    """Message to signal stopping the current generation process."""
+    pass
+
+
+class SceneLibrary(Static):
+    """Widget to display and manage the list of scenes."""
+
+    selected_scene_id: reactive[Optional[str]] = reactive(None)
+
+    def compose(self):
+        yield Label("Scene Library")
+        yield ListView(id="scene_list_view")
+
+    def load_scenes(self, scenes_data: dict) -> None:
+        """Clears and repopulates the scene list."""
+        list_view = self.query_one(ListView)
+        list_view.clear()
+
+        if not scenes_data:
+            no_scenes_item = ListItem(Label("(No scenes yet)"), id="placeholder_no_scenes")
+            list_view.append(no_scenes_item)
+            return
+
+        for scene_id, scene_obj in scenes_data.items():
+            scene_name = scene_obj.name
+            item_widget_id = f"scene_item_{scene_id}"
+            item = ListItem(Label(scene_name if scene_name else "Unnamed Scene"), id=item_widget_id)
+            item.scene_id = scene_id  # Store scene_id on the item for later retrieval
+            list_view.append(item)
+
+    async def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """Handle scene selection from the list view."""
+        if hasattr(event.item, "scene_id") and event.item.scene_id:
+            self.selected_scene_id = event.item.scene_id
+            self.post_message(SceneSelected(event.item.scene_id))
+            self.app.log.info(f"SceneLibrary: Selected scene {event.item.scene_id}")
+        else:
+            self.selected_scene_id = None
+            self.app.log.warning("SceneLibrary: Selected item has no scene_id")
+
+
+class SceneWorkspace(Container):
+    """Widget to display the current scene, its content, and generation progress."""
+
+    DEFAULT_CSS = """
+    SceneWorkspace {
+        layout: vertical;
+        overflow-y: auto;        
+        border: heavy $primary;
+        height: 100%;
+        min-height: 20;
+    }
+    #scene_title_display {
+        width: 100%;
+        padding: 0 1;
+        margin-bottom: 1;
+        border: round $primary;
+        min-height: 3;
+    }
+    #scene_content_display {
+        height: 1fr;
+        width: 100%;
+        margin-bottom: 1;
+        border: round $accent;
+        overflow-y: auto;
+        min-height: 10;
+    }
+    #quality_score_label {
+        margin-top: 1;
+        padding: 0 1;
+        background: $primary-lighten-2;
+        color: $text;
+        width: 100%;
+        text-align: center;
+    }
+    #generation_progress_bar {
+        margin-top: 1;
+        width: 100%;
+        height: 1;
+        background: $primary-background;
+        color: $success;
+    }
+    .button-bar {
+        layout: horizontal;
+        align-horizontal: center;
+        width: 100%;
+        margin-top: 1;
+        height: 3;
+        min-height: 3;
+    }
+    .button-bar Button {
+        margin: 0 1;
+        min-width: 10;
+        height: 3;
+        min-height: 3;
+    }
+    """
+
+    current_scene_id: reactive[Optional[str]] = reactive(None)
+    scene_title: reactive[str] = reactive("")
+    scene_content: reactive[str] = reactive("")
+    quality_score: reactive[float] = reactive(0.0)
+    is_generating: reactive[bool] = reactive(False)
+    generation_progress: reactive[float] = reactive(0.0)
+    generation_in_progress: reactive[bool] = reactive(False)
+
+    def set_generating_state(self, is_generating: bool) -> None:
+        """Set the generating state of the workspace."""
+        self.is_generating = is_generating
+        self.generation_in_progress = is_generating
+        if not is_generating:
+            self.generation_progress = 0.0
+
+    def update_progress(self, progress: float) -> None:
+        """Update the generation progress."""
+        self.generation_progress = progress
+        if progress >= 100.0:
+            self.generation_in_progress = False
+
+    def on_mount(self) -> None:
+        self.app.log.info("--- SceneWorkspace: Mounted --- ")
+        initial_scene = (
+            self.app.state.current_scene
+            if hasattr(self.app, "state") and self.app.state.current_scene
+            else None
+        )
+        self.update_workspace(initial_scene)
+        self.watch_quality_score(0.0, self.quality_score)
+        self.watch_is_generating(False, self.is_generating)
+
+    def compose(self) -> None:
+        yield Label("Scene Workspace", classes="workspace-title")
+        yield Static(self.scene_title, id="scene_title_display")
+        yield Markdown(self.scene_content, id="scene_content_display")
+        yield ProgressBar(total=100, id="generation_progress_bar")
+        yield Label(f"Quality Score: {self.quality_score:.2f}", id="quality_score_label")
+        with Horizontal(classes="button-bar"):
+            yield Button("Edit Scene", id="edit_scene_button", variant="primary", disabled=True)
+            yield Button("Generate/Regenerate", id="generate_scene_button", variant="success")
+            yield Button("Save Scene", id="save_scene_button", variant="default")
+
+    def watch_quality_score(self, old_value: float, new_value: float) -> None:
+        """Called when quality_score changes to update the label."""
+        try:
+            quality_label = self.query_one("#quality_score_label", Label)
+            quality_label.update(f"Quality Score: {new_value:.2f}")
+            self.app.log.info(
+                f"--- SceneWorkspace: watch_quality_score triggered. Old: {old_value}, New: {new_value}. Label updated. ---"
+            )
+        except Exception as e:
+            self.app.log.error(f"--- SceneWorkspace: ERROR in watch_quality_score: {e} ---")
+
+    def watch_is_generating(self, old_value: bool, new_value: bool) -> None:
+        """Called when is_generating changes to show/hide progress bar and update button state."""
+        progress_bar = self.query_one("#generation_progress_bar", ProgressBar)
+        generate_button = self.query_one("#generate_scene_button", Button)
+        if new_value:
+            progress_bar.remove_class("-hidden")
+            generate_button.label = "Stop Generation"
+            generate_button.variant = "error"
+        else:
+            progress_bar.add_class("-hidden")
+            generate_button.label = "Generate/Regenerate"
+            generate_button.variant = "success"
+            self.generation_progress = 0  # Reset progress when stopping
+        self.app.log.info(f"--- SceneWorkspace: watch_is_generating. Generating: {new_value} ---")
+
+    def watch_generation_progress(self, old_value: float, new_value: float) -> None:
+        """Called when generation_progress changes to update the progress bar."""
+        progress_bar = self.query_one("#generation_progress_bar", ProgressBar)
+        progress_bar.progress = new_value
+        self.app.log.info(
+            f"--- SceneWorkspace: watch_generation_progress. Progress: {new_value} ---"
+        )
+
+    def update_workspace(self, scene: Optional["Scene"]) -> None:
+        if scene:
+            self.current_scene_id = scene.id
+            self.scene_title = scene.name
+            self.scene_content = scene.content
+
+            self.query_one("#scene_title_display", Static).update(f"Scene Name: {scene.name}")
+            self.query_one("#scene_content_display", Markdown).update(
+                scene.content if scene.content else "*No content yet.*"
+            )
+
+            self.quality_score = scene.quality_score
+
+            self.app.log.info(
+                f"--- SceneWorkspace: Updated with scene '{scene.id}', Name: '{scene.name}', QS: {scene.quality_score} ---"
+            )
+        else:
+            self.current_scene_id = None
+            self.scene_title = ""
+            self.scene_content = ""
+
+            self.query_one("#scene_title_display", Static).update("No scene selected.")
+            self.query_one("#scene_content_display", Markdown).update(
+                "*Select a scene from the library or create a new one.*"
+            )
+
+            self.quality_score = 0.0
+
+            self.app.log.info("--- SceneWorkspace: Cleared (no scene selected). ---")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press events within the SceneWorkspace."""
+        self.app.log.info(
+            f"--- SceneWorkspace.on_button_pressed: Button ID '{event.button.id}' pressed. ---"
+        )
+        if event.button.id == "generate_scene_button":
+            if self.is_generating:  # If already generating, this button means 'Stop'
+                self.app.log.info(
+                    "--- SceneWorkspace: 'Stop Generation' button pressed. Posting StopGeneration message. ---"
+                )
+                self.post_message(StopGeneration())
+            elif self.current_scene_id:
+                self.app.log.info(
+                    f"--- SceneWorkspace: 'Generate/Regenerate' button pressed for scene {self.current_scene_id}. Posting GenerateSceneContent message. ---"
+                )
+                self.post_message(GenerateSceneContent(self.current_scene_id))
+            else:
+                self.app.notify("No scene selected to generate content for.", severity="warning")
+                self.app.log.warning(
+                    "--- SceneWorkspace: 'Generate/Regenerate' pressed but no current_scene_id. ---"
+                )
+        elif event.button.id == "save_scene_button":
+            self.app.log.info(
+                "--- SceneWorkspace: 'Save Scene' button pressed. Action handled by app binding. ---"
+            )
+        elif event.button.id == "edit_scene_button":
+            self.app.log.info(
+                "--- SceneWorkspace: 'Edit Scene' button pressed. Functionality not implemented. ---"
+            )
+            self.app.notify("Scene editing is not yet implemented.", severity="warning")
+
+
+class AdvisorPanel(Static):
+    """Widget to display feedback from various advisors."""
+
+    feedback_content = reactive("No feedback yet.")
+    has_feedback: reactive[bool] = reactive(False)
+
+    DEFAULT_CSS = """
+    AdvisorPanel {
+        height: 100%;
+        border: heavy $primary;
+    }
+    #advisor_panel_title {
+        width: 100%;
+        padding: 0 1;
+        margin-bottom: 1;
+        border: round $primary;
+    }
+    #advisor_feedback_scroll {
+        height: 1fr;
+        width: 100%;
+        border: round $accent;
+    }
+    #advisor_feedback_markdown {
+        padding: 1;
+    }
+    """
+
+    def compose(self):
+        yield Label("Advisor Feedback", id="advisor_panel_title")
+        with VerticalScroll(id="advisor_feedback_scroll"):
+            yield Markdown(self.feedback_content, id="advisor_feedback_markdown")
+
+    def update_feedback(self, feedback_data: Optional[Dict[str, Any]]) -> None:
+        """Update the feedback content with new data."""
+        if not feedback_data:
+            self.feedback_content = "No feedback available."
+            self.has_feedback = False
+            return
+
+        feedback_text = []
+        for advisor_name, feedback in feedback_data.items():
+            feedback_text.append(f"### {advisor_name.replace('_', ' ').title()}")
+            
+            if isinstance(feedback, dict):
+                if "critique" in feedback:
+                    feedback_text.append(f"**Critique:** {feedback['critique']}")
+                if "suggestions" in feedback:
+                    feedback_text.append("\n**Suggestions:**")
+                    for suggestion in feedback["suggestions"]:
+                        feedback_text.append(f"- {suggestion}")
+            elif isinstance(feedback, str):
+                feedback_text.append(feedback)
+            else:
+                feedback_text.append(str(feedback))
+            
+            feedback_text.append("")  # Add spacing between advisors
+
+        self.feedback_content = "\n".join(feedback_text)
+        self.has_feedback = True
+        
+        # Update the markdown widget
+        markdown_widget = self.query_one("#advisor_feedback_markdown", Markdown)
+        markdown_widget.update(self.feedback_content)
+        self.app.log.info(f"AdvisorPanel: Updated feedback content with {len(feedback_data)} advisors")
+
+
+class StatusBar(Static):
+    """A simple status bar widget."""
+
+    status_text = reactive("Ready.")
+    is_generating: reactive[bool] = reactive(False)
+
+    def compose(self):
+        # This Label's content will automatically update when self.status_text changes.
+        yield Label(self.status_text, id="status_bar_label")
+
+    def update_message(self, message: str) -> None:
+        """Update the status bar with a direct message."""
+        self.status_text = message
+        self.app.log.info(f"StatusBar: Updated message - {message}")
+
+    def update_status(self, current_app_state: "AppState") -> None:
+        """Update the status bar with the current application state."""
+        status_parts = []
+        
+        # Add screen information
+        status_parts.append(f"Screen: {current_app_state.current_screen}")
+        
+        # Add generation status
+        self.is_generating = current_app_state.is_generating
+        status_parts.append(f"Generating: {'Yes' if self.is_generating else 'No'}")
+        
+        # Add scene information
+        scene_count = len(current_app_state.scenes)
+        status_parts.append(f"Scenes: {scene_count}")
+        
+        if current_app_state.current_scene:
+            status_parts.append(f"Current: {current_app_state.current_scene.name}")
+        
+        self.status_text = " | ".join(status_parts)
+        self.app.log.info(f"StatusBar: Updated status - {self.status_text}") 
