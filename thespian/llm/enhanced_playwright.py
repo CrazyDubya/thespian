@@ -208,7 +208,7 @@ class EnhancedPlaywright(BasePlaywright):
                 refinement_result = self.refinement_system.refine_scene_iteratively(
                     expanded_scene,
                     lambda prompt: self.get_llm().invoke(prompt),
-                    {**requirements.dict(), "scene_id": scene_id},
+                    {**requirements.model_dump() if hasattr(requirements, 'model_dump') else requirements.dict(), "scene_id": scene_id},
                     progress_callback
                 )
                 final_scene = refinement_result["refined_scene"]
@@ -355,7 +355,7 @@ class EnhancedPlaywright(BasePlaywright):
                 narrative_content=enhanced_result["scene"],
                 technical_content="",  # Could be expanded with more collaborators
                 emotional_content="",  # Could be expanded with more collaborators
-                requirements=json.dumps(requirements.dict())
+                requirements=json.dumps(requirements.model_dump() if hasattr(requirements, 'model_dump') else requirements.dict())
             )
             
             synthesis_response = self.get_llm().invoke(synthesis_prompt)
@@ -374,7 +374,7 @@ class EnhancedPlaywright(BasePlaywright):
                 refinement_result = self.refinement_system.refine_scene_iteratively(
                     synthesized_scene,
                     lambda prompt: self.get_llm().invoke(prompt),
-                    {**requirements.dict(), "scene_id": scene_id},
+                    {**requirements.model_dump() if hasattr(requirements, 'model_dump') else requirements.dict(), "scene_id": scene_id},
                     lambda data: progress_callback({**data, "phase": f"collaboration_refinement_{data['phase']}"}) if progress_callback else None
                 )
                 final_scene = refinement_result["refined_scene"]

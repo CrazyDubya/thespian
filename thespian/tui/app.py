@@ -39,7 +39,7 @@ from rich.text import Text  # If used
 
 # Imports from your project
 from thespian.llm import LLMManager  # Assuming this and other llm components are needed
-from thespian.llm.playwright import EnhancedPlaywright, SceneRequirements  # CRITICAL IMPORT
+from thespian.llm.consolidated_playwright import Playwright, SceneRequirements, PlaywrightCapability  # CRITICAL IMPORT
 from thespian.llm.theatrical_memory import TheatricalMemory
 from thespian.llm.quality_control import TheatricalQualityControl
 from thespian.llm.theatrical_advisors import AdvisorManager
@@ -193,13 +193,13 @@ class ThespianTUI(App[None]):  # Specify typevar for App if not returning a valu
     ]
     # CSS_PATH = "app.tcss" # Uncomment if you have a TCSS file
 
-    def __init__(self, playwright_instance: Optional[EnhancedPlaywright] = None) -> None:
+    def __init__(self, playwright_instance: Optional[Playwright] = None) -> None:
         super().__init__()
         self.state: AppState = AppState()
         self.generation_worker: Optional[Worker[None]] = None
 
         if playwright_instance:
-            self.playwright: EnhancedPlaywright = playwright_instance
+            self.playwright: Playwright = playwright_instance
         else:
             # Default initialization for standalone app run
             llm_manager: LLMManager = LLMManager()
@@ -208,13 +208,18 @@ class ThespianTUI(App[None]):  # Specify typevar for App if not returning a valu
             checkpoint_dir: Path = Path.home() / ".thespian" / "checkpoints"
             checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-            self.playwright = EnhancedPlaywright(
+            self.playwright = Playwright(
                 name="TUI Default Playwright",
                 llm_manager=llm_manager,
                 memory=memory,
                 quality_control=quality_control,
-                llm_model_type="ollama",  # Example default
-                checkpoint_dir=str(checkpoint_dir),
+                model_type="ollama",  # Example default
+                checkpoint_manager=None,  # Will be initialized automatically
+                enabled_capabilities=[
+                    PlaywrightCapability.BASIC,
+                    PlaywrightCapability.ITERATIVE_REFINEMENT,
+                    PlaywrightCapability.CHARACTER_TRACKING
+                ]
             )
         self.state.playwright_instance = self.playwright
 
@@ -795,7 +800,8 @@ if __name__ == "__main__":
     from thespian.llm.manager import LLMManager
     from thespian.llm.theatrical_memory import TheatricalMemory
     from thespian.llm.quality_control import TheatricalQualityControl
-    from thespian.llm.playwright import EnhancedPlaywright
+    from thespian.llm.consolidated_playwright import Playwright, PlaywrightCapability
+    from thespian.checkpoints.checkpoint_manager import CheckpointManager
 
     # Create a default home directory for Thespian app data if it doesn't exist
     thespian_home = Path.home() / ".thespian"
@@ -806,14 +812,20 @@ if __name__ == "__main__":
     default_quality_control = TheatricalQualityControl()
     default_checkpoint_dir = thespian_home / "checkpoints_standalone"
     default_checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    default_checkpoint_manager = CheckpointManager(checkpoint_dir=str(default_checkpoint_dir))
 
-    default_playwright = EnhancedPlaywright(
+    default_playwright = Playwright(
         name="Standalone TUI Playwright",
         llm_manager=default_llm_manager,
         memory=default_memory,
         quality_control=default_quality_control,
-        llm_model_type="ollama",
-        checkpoint_dir=str(default_checkpoint_dir),
+        model_type="ollama",
+        checkpoint_manager=default_checkpoint_manager,
+        enabled_capabilities=[
+            PlaywrightCapability.BASIC,
+            PlaywrightCapability.ITERATIVE_REFINEMENT,
+            PlaywrightCapability.CHARACTER_TRACKING
+        ]
     )
 
     app = ThespianTUI(playwright_instance=default_playwright)

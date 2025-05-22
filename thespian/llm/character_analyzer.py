@@ -99,7 +99,23 @@ class CharacterTracker(BaseModel):
         
         # Combine and deduplicate
         all_matches = dialogue_matches + direction_matches
-        character_names = list(set([name.strip() for name in all_matches if len(name.strip()) > 1]))
+        
+        # Filter out technical cues that are not character names
+        technical_cues = {
+            "SOUND", "MUSIC", "LIGHTS", "LIGHTING", "SET", "SCENE", "ACT", 
+            "CURTAIN", "STAGE", "BACKDROP", "PROPS", "COSTUME", "MAKEUP",
+            "EFFECTS", "SFX", "BGM", "FADE", "CUT", "ENTER", "EXIT",
+            "BLACKOUT", "SPOTLIGHT", "VOICEOVER", "NARRATOR", "END"
+        }
+        
+        character_names = []
+        for name in all_matches:
+            clean_name = name.strip()
+            if len(clean_name) > 1 and clean_name.upper() not in technical_cues:
+                character_names.append(clean_name)
+        
+        # Deduplicate while preserving order
+        character_names = list(dict.fromkeys(character_names))
         
         return character_names
     
@@ -119,76 +135,276 @@ class CharacterTracker(BaseModel):
             if profile:
                 existing_profiles[char_name] = {
                     "background": profile.background,
-                    "current_arc": profile.development_arc[-1].description if profile.development_arc else "Not started",
+                    "current_arc": getattr(profile, 'development_arc', [])[-1].description if getattr(profile, 'development_arc', []) and isinstance(getattr(profile, 'development_arc', []), list) else "Not started",
                     "current_emotion": profile.get_current_emotional_state().emotion if profile.get_current_emotional_state() else "Unknown"
                 }
             else:
                 existing_profiles[char_name] = {"background": "Unknown", "current_arc": "Not started", "current_emotion": "Unknown"}
         
         # Create prompt for LLM analysis
-        prompt = f"""Analyze the characters in this theatrical scene.
+        prompt = f"""You are a theatrical character analyst. Analyze the characters in this scene and return ONLY valid JSON.
 
 SCENE CONTENT:
 {scene_content}
 
-DETECTED CHARACTERS:
-{', '.join(character_names)}
+DETECTED CHARACTERS: {', '.join(character_names)}
 
 EXISTING CHARACTER PROFILES:
 {json.dumps(existing_profiles, indent=2)}
 
-ANALYSIS INSTRUCTIONS:
-1. For each character, analyze their presence and development in the scene
-2. Identify primary and secondary characters
-3. Identify relationship developments between characters
-4. Identify advancement in character arcs
-5. Analyze emotional states and changes
+CRITICAL INSTRUCTIONS:
+1. Return ONLY valid JSON - no explanatory text
+2. Use EXACT character names from the detected characters list
+3. For character_arcs_advanced, each character entry MUST be an object with the specified fields
+4. All arrays must contain strings, not objects
+5. All numeric values must be numbers, not strings
 
-Format your response as JSON with these keys:
-- "character_references": A dictionary mapping character names to their analysis
-  - Each character analysis should include: mention_count, dialogue_lines, actions, emotions, relations, importance (0.0-1.0)
-- "primary_characters": List of primary character names
-- "secondary_characters": List of secondary character names
-- "relationships_developed": List of relationship developments with character pairs and descriptions
-- "character_arcs_advanced": Dictionary mapping character names to arc developments
-"""
+JSON STRUCTURE REQUIREMENTS:
+- character_references: object where each key is a character name
+- primary_characters: array of character name strings
+- secondary_characters: array of character name strings  
+- relationships_developed: array of objects with "characters" and "development" fields
+- character_arcs_advanced: object where each character name maps to an object with required fields
+
+RESPOND WITH THIS EXACT JSON FORMAT:
+{{
+  "character_references": {{
+    "{character_names[0] if character_names else 'CHARACTER_NAME'}": {{
+      "mention_count": 1,
+      "dialogue_lines": 1,
+      "actions": ["speaks", "moves"],
+      "emotions": ["determined", "curious"],
+      "relations": {{}},
+      "importance": 0.8
+    }}
+  }},
+  "primary_characters": {json.dumps(character_names[:2] if len(character_names) >= 2 else character_names)},
+  "secondary_characters": {json.dumps(character_names[2:] if len(character_names) > 2 else [])},
+  "relationships_developed": [
+    {{"characters": {json.dumps(character_names[:2] if len(character_names) >= 2 else character_names)}, "development": "characters interact meaningfully"}}
+  ],
+  "character_arcs_advanced": {{
+    "{character_names[0] if character_names else 'CHARACTER_NAME'}": {{
+      "arc_development": "character shows growth through scene interactions",
+      "emotional_journey": "displays range of emotions appropriate to situation",
+      "growth_areas": ["character development", "relationship building"],
+      "conflicts_faced": ["internal struggle", "external challenge"]
+    }}
+  }}
+}}
+
+CRITICAL: Return ONLY this JSON structure with your analysis. NO other text."""
         
-        # Invoke LLM for analysis
-        response = llm_invoke_func(prompt)
-        response_text = str(response.content if hasattr(response, "content") else response)
-        
-        # Extract JSON data
-        try:
-            data = json.loads(response_text)
+        # Try LLM analysis with self-correction on failure
+        max_retries = 3  # Increase retries
+        last_error = ""
+        for attempt in range(max_retries + 1):
+            if attempt > 0:
+                # Add corrective feedback for retry
+                correction_prompt = f"""CORRECTION NEEDED: Your previous response failed JSON validation.
+
+Previous response that failed:
+{response_text[:1000]}...
+
+Error: {last_error}
+
+Please provide ONLY valid JSON with NO additional text. The response must be a single JSON object with exactly these keys:
+- "character_references": object with character names as keys
+- "primary_characters": array of strings
+- "secondary_characters": array of strings  
+- "relationships_developed": array of objects
+- "character_arcs_advanced": object with character names as keys, each value must be an OBJECT not a string
+
+Example of correct character_arcs_advanced format:
+"character_arcs_advanced": {{
+  "LYRA": {{
+    "arc_development": "description text",
+    "emotional_journey": "emotional changes", 
+    "growth_areas": ["area1", "area2"],
+    "conflicts_faced": ["conflict1", "conflict2"]
+  }}
+}}
+
+{prompt}"""
+                response = llm_invoke_func(correction_prompt)
+            else:
+                response = llm_invoke_func(prompt)
+                
+            response_text = str(response.content if hasattr(response, "content") else response)
             
-            # Convert to CharacterReference objects
+            # Extract JSON data
+            try:
+                # Try to extract JSON from the response if it's wrapped in text
+                json_start = response_text.find('{')
+                json_end = response_text.rfind('}') + 1
+                if json_start != -1 and json_end > json_start:
+                    json_text = response_text[json_start:json_end]
+                    data = json.loads(json_text)
+                else:
+                    # If no JSON braces found, try the whole response
+                    data = json.loads(response_text)
+                break  # Success, exit retry loop
+                
+            except (json.JSONDecodeError, ValueError) as e:
+                last_error = str(e)
+                logger.warning(f"JSON parsing attempt {attempt + 1} failed: {last_error}")
+                logger.warning(f"Response text was: {response_text[:500]}...")
+                if attempt == max_retries:
+                    # Final attempt failed, use fallback
+                    logger.error(f"All JSON parsing attempts failed for character analysis")
+                    logger.error(f"Final failed response: {response_text}")
+                    raise
+                continue
+            
+            # Convert to CharacterReference objects with better validation
             character_refs = {}
             for char_name, char_data in data.get("character_references", {}).items():
+                # Ensure char_data is a dictionary
+                if not isinstance(char_data, dict):
+                    logger.warning(f"Character data for {char_name} is not a dict, creating default")
+                    char_data = {}
+                
+                # Validate and sanitize actions field
+                actions = char_data.get("actions", [])
+                if not isinstance(actions, list):
+                    if actions is None:
+                        actions = []
+                    elif isinstance(actions, str):
+                        actions = [actions]  # Convert single string to list
+                    else:
+                        actions = []
+                
+                # Validate and sanitize emotions field
+                emotions = char_data.get("emotions", [])
+                if not isinstance(emotions, list):
+                    if emotions is None:
+                        emotions = []
+                    elif isinstance(emotions, str):
+                        emotions = [emotions]  # Convert single string to list
+                    else:
+                        emotions = []
+                
+                # Validate relations field
+                relations = char_data.get("relations", {})
+                if not isinstance(relations, dict):
+                    relations = {}
+                
                 character_refs[char_name] = CharacterReference(
                     name=char_name,
                     mention_count=char_data.get("mention_count", 0),
                     dialogue_lines=char_data.get("dialogue_lines", 0),
-                    actions=char_data.get("actions", []),
-                    emotions=char_data.get("emotions", []),
-                    relations=char_data.get("relations", {}),
+                    actions=actions,
+                    emotions=emotions,
+                    relations=relations,
                     importance=char_data.get("importance", 0.0)
                 )
             
-            # Create scene analysis
-            analysis = SceneCharacterAnalysis(
+            # Validate and sanitize character_arcs_advanced
+            character_arcs_raw = data.get("character_arcs_advanced", {})
+            character_arcs_advanced = {}
+            
+            if isinstance(character_arcs_raw, dict):
+                for char_name, arc_data in character_arcs_raw.items():
+                    if isinstance(arc_data, dict):
+                        character_arcs_advanced[char_name] = arc_data
+                    elif isinstance(arc_data, str):
+                        # Convert string description to dictionary
+                        character_arcs_advanced[char_name] = {
+                            "arc_development": arc_data,
+                            "emotional_journey": "Not specified",
+                            "growth_areas": ["Character development"],
+                            "conflicts_faced": ["Internal development"]
+                        }
+                    else:
+                        logger.warning(f"Invalid arc data for {char_name}: {type(arc_data)}")
+                        character_arcs_advanced[char_name] = {
+                            "arc_development": "Character appears in scene",
+                            "emotional_journey": "Not specified",
+                            "growth_areas": [],
+                            "conflicts_faced": []
+                        }
+            
+            # Validate relationships_developed
+            relationships_developed = data.get("relationships_developed", [])
+            if not isinstance(relationships_developed, list):
+                relationships_developed = []
+            
+            # Create scene analysis with validation error handling
+            try:
+                analysis = SceneCharacterAnalysis(
+                    scene_id=scene_id,
+                    character_references=character_refs,
+                    primary_characters=data.get("primary_characters", []),
+                    secondary_characters=data.get("secondary_characters", []),
+                    relationships_developed=relationships_developed,
+                    character_arcs_advanced=character_arcs_advanced
+                )
+                return analysis
+                
+            except Exception as validation_error:
+                last_error = f"Validation error: {str(validation_error)}"
+                logger.warning(f"Character analysis validation attempt {attempt + 1} failed: {last_error}")
+                logger.warning(f"Data that failed validation: {json.dumps(data, indent=2) if 'data' in locals() else 'No data'}")
+                logger.warning(f"character_arcs_advanced structure: {json.dumps(character_arcs_advanced, indent=2) if 'character_arcs_advanced' in locals() else 'Not created yet'}")
+                if attempt == max_retries:
+                    # Final attempt failed, use fallback
+                    logger.error(f"All validation attempts failed for character analysis")
+                    logger.error(f"Final validation error: {validation_error}")
+                    raise
+                continue
+            
+        # Final fallback - try with a minimal template that should always work
+        logger.warning("All sophisticated attempts failed, trying minimal template")
+        try:
+            minimal_template = {
+                "character_references": {
+                    name: {
+                        "mention_count": 1,
+                        "dialogue_lines": 1,
+                        "actions": ["appears"],
+                        "emotions": ["neutral"],
+                        "relations": {},
+                        "importance": 0.5
+                    } for name in character_names
+                },
+                "primary_characters": character_names[:2] if len(character_names) >= 2 else character_names,
+                "secondary_characters": character_names[2:] if len(character_names) > 2 else [],
+                "relationships_developed": [],
+                "character_arcs_advanced": {
+                    name: {
+                        "arc_development": f"{name} appears in this scene",
+                        "emotional_journey": "character participates in scene",
+                        "growth_areas": ["scene participation"],
+                        "conflicts_faced": ["none specific"]
+                    } for name in character_names
+                }
+            }
+            
+            # Convert to CharacterReference objects
+            character_refs = {}
+            for char_name, char_data in minimal_template["character_references"].items():
+                character_refs[char_name] = CharacterReference(
+                    name=char_name,
+                    mention_count=char_data["mention_count"],
+                    dialogue_lines=char_data["dialogue_lines"],
+                    actions=char_data["actions"],
+                    emotions=char_data["emotions"],
+                    relations=char_data["relations"],
+                    importance=char_data["importance"]
+                )
+            
+            return SceneCharacterAnalysis(
                 scene_id=scene_id,
                 character_references=character_refs,
-                primary_characters=data.get("primary_characters", []),
-                secondary_characters=data.get("secondary_characters", []),
-                relationships_developed=data.get("relationships_developed", []),
-                character_arcs_advanced=data.get("character_arcs_advanced", {})
+                primary_characters=minimal_template["primary_characters"],
+                secondary_characters=minimal_template["secondary_characters"],
+                relationships_developed=minimal_template["relationships_developed"],
+                character_arcs_advanced=minimal_template["character_arcs_advanced"]
             )
             
-            return analysis
-            
-        except json.JSONDecodeError:
-            logger.error("Failed to decode JSON from character LLM analysis")
-            # Return a basic analysis if LLM fails
+        except Exception as fallback_error:
+            logger.error(f"Even minimal fallback failed: {fallback_error}")
+            # Ultimate fallback - just basic character references
             char_refs = {
                 name: CharacterReference(name=name, mention_count=1) 
                 for name in character_names

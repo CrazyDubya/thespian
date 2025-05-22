@@ -771,7 +771,7 @@ class DynamicScenePlanner(BaseModel):
         if hasattr(self.continuity_tracker, "thematic_developments"):
             for theme, developments in self.continuity_tracker.thematic_developments.items():
                 if developments:
-                    themes[theme] = developments[-1].development
+                    themes[theme] = developments[-1].development if developments and isinstance(developments, list) else ""
         
         # Build requirements
         requirements = {
@@ -921,6 +921,7 @@ ACTIVE ELEMENTS:
 
 
 class StructureEnhancedPlaywright:
+    """This class is deprecated. Use Playwright with PlaywrightCapability.NARRATIVE_STRUCTURE instead."""
     """
     Enhanced playwright that incorporates advanced narrative structure awareness.
     Uses both the enhanced memory system and the advanced story structure system
@@ -1010,9 +1011,40 @@ FORMAT YOUR SCENE AS:
 [Scene conclusion and transition]
 """
 
-        # Generate the scene content
-        response = self.llm_invoke_func(prompt)
-        scene_content = str(response.content if hasattr(response, "content") else response)
+        # Generate the scene content with self-correction
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            if attempt > 0:
+                # Add corrective feedback for retry
+                correction_prompt = f"""CORRECTION NEEDED: Your previous response was too short or didn't follow the formatting requirements.
+
+Previous response that failed:
+{response_text[:1000]}...
+
+Please provide a complete scene with:
+- Proper character names in ALL CAPS
+- Stage directions in (parentheses)
+- Technical cues in [brackets]
+- Minimum 2000 characters of content
+- Clear scene structure with beginning, middle, and end
+
+{prompt}"""
+                response = self.llm_invoke_func(correction_prompt)
+            else:
+                response = self.llm_invoke_func(prompt)
+                
+            response_text = str(response.content if hasattr(response, "content") else response)
+            
+            # Basic validation - check if content is substantial
+            if len(response_text) > 1500:  # Minimum content threshold
+                scene_content = response_text
+                break
+            else:
+                logger.warning(f"Scene generation attempt {attempt + 1} produced insufficient content ({len(response_text)} chars)")
+                if attempt == max_retries:
+                    logger.error("All scene generation attempts failed - using minimal content")
+                    scene_content = response_text  # Use what we have
+                continue
         
         # Create scene identifier
         scene_id = f"act{act_number}_scene{scene_number}_{datetime.now().strftime('%Y%m%d%H%M%S')}"

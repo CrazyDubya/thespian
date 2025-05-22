@@ -141,7 +141,7 @@ class DialogueSystem(BaseModel):
 
             # Store in dialogue history
             dialogue_memory.feedback_history.append(
-                {"question": question, "feedback": follow_up.dict(), "timestamp": time.time()}
+                {"question": question, "feedback": follow_up.model_dump() if hasattr(follow_up, 'model_dump') else follow_up.dict(), "timestamp": time.time()}
             )
 
         dialogue_memory.last_interaction = time.time()
@@ -183,43 +183,80 @@ EXAMPLES:
 - [example 2]
 PRIORITY: [1-5]"""
 
-        response = llm.invoke(prompt)
+        # Try LLM with self-correction
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            if attempt > 0:
+                # Add corrective feedback for retry
+                correction_prompt = f"""CORRECTION NEEDED: Your previous response didn't follow the required format.
 
-        # Parse response into structured feedback
-        lines = response.content.split("\n")
-        score = original_feedback.score  # Default to original score
-        feedback = "Follow-up feedback provided"  # Default feedback
-        suggestions = []
-        examples = []
-        priority = original_feedback.priority  # Default to original priority
+Previous response that failed:
+{response.content[:1000]}...
 
-        current_section = None
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
+Please provide feedback in EXACTLY this format:
+SCORE: [number between 0.0 and 1.0]
+FEEDBACK: [your feedback text]
+SUGGESTIONS:
+- [suggestion 1]
+- [suggestion 2]
+EXAMPLES:
+- [example 1]
+- [example 2]
+PRIORITY: [number between 1 and 5]
 
-            if line.startswith("SCORE:"):
-                try:
-                    score = float(line.split(":")[1].strip())
-                except (ValueError, IndexError):
-                    pass
-            elif line.startswith("FEEDBACK:"):
-                feedback = line.split(":")[1].strip()
-            elif line.startswith("SUGGESTIONS:"):
-                current_section = "suggestions"
-            elif line.startswith("EXAMPLES:"):
-                current_section = "examples"
-            elif line.startswith("PRIORITY:"):
-                try:
-                    priority = int(line.split(":")[1].strip())
-                except (ValueError, IndexError):
-                    pass
-            elif line.startswith("- "):
-                if current_section == "suggestions":
-                    suggestions.append(line[2:])
-                elif current_section == "examples":
-                    examples.append(line[2:])
+{prompt}"""
+                response = llm.invoke(correction_prompt)
+            else:
+                response = llm.invoke(prompt)
+
+            # Parse response into structured feedback
+            lines = response.content.split("\n")
+            score = original_feedback.score  # Default to original score
+            feedback = "Follow-up feedback provided"  # Default feedback
+            suggestions = []
+            examples = []
+            priority = original_feedback.priority  # Default to original priority
+            
+            # Try to parse the response
+            parsing_success = False
+            current_section = None
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+
+                if line.startswith("SCORE:"):
+                    try:
+                        score = float(line.split(":")[1].strip())
+                        parsing_success = True
+                    except (ValueError, IndexError):
+                        pass
+                elif line.startswith("FEEDBACK:"):
+                    feedback = line.split(":")[1].strip()
+                    parsing_success = True
+                elif line.startswith("SUGGESTIONS:"):
+                    current_section = "suggestions"
+                elif line.startswith("EXAMPLES:"):
+                    current_section = "examples"
+                elif line.startswith("PRIORITY:"):
+                    try:
+                        priority = int(line.split(":")[1].strip())
+                        parsing_success = True
+                    except (ValueError, IndexError):
+                        pass
+                elif line.startswith("- "):
+                    if current_section == "suggestions":
+                        suggestions.append(line[2:])
+                    elif current_section == "examples":
+                        examples.append(line[2:])
+            
+            if parsing_success:
+                break
+            else:
+                logger.warning(f"Dialogue feedback parsing attempt {attempt + 1} failed")
+                if attempt == max_retries:
+                    logger.warning("Failed to parse dialogue feedback - using defaults")
+
 
         return AdvisorFeedback(
             score=score,

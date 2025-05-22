@@ -5,10 +5,28 @@ This module contains theatrical advisors that help with various aspects of theat
 such as timing, dialogue, characterization, and narrative continuity.
 """
 
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional, Union, Type
 from pydantic import BaseModel, Field, ConfigDict
 from thespian.llm import LLMManager
 from thespian.llm.theatrical_memory import TheatricalMemory
+import logging
+import json
+import time
+from enum import Enum
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class AdvisorType(str, Enum):
+    """Types of theatrical advisors."""
+    NARRATIVE = "narrative"
+    DIALOGUE = "dialogue"
+    CHARACTER = "character"
+    SCENIC = "scenic"
+    PACING = "pacing"
+    THEMATIC = "thematic"
+
 
 class AdvisorFeedback(BaseModel):
     """
@@ -63,6 +81,751 @@ class TheatricalAdvisor(BaseModel):
     def get_llm(self, model_name: str = "ollama"):
         """Get the LLM for this advisor."""
         return self.llm_manager.get_llm(model_name)
+
+
+class NarrativeAdvisor(TheatricalAdvisor):
+    """
+    Advisor specialized in narrative structure and plot coherence.
+    """
+    
+    def __init__(self, name: str, llm_manager: LLMManager, memory: TheatricalMemory):
+        """Initialize the narrative advisor."""
+        super().__init__(
+            name=name,
+            expertise=AdvisorType.NARRATIVE,
+            llm_manager=llm_manager,
+            memory=memory
+        )
+    
+    def analyze(self, content: str, context: Dict[str, Any]) -> AdvisorFeedback:
+        """
+        Analyze narrative aspects of a scene.
+        
+        Args:
+            content (str): The text of the scene to analyze.
+            context (Dict[str, Any]): Additional context for analysis.
+            
+        Returns:
+            AdvisorFeedback: Structured feedback including score, suggestions, and priority.
+        """
+        llm = self.get_llm()
+        
+        # Get act and scene information from context
+        act_number = context.get("act_number", 1)
+        scene_number = context.get("scene_number", 1)
+        
+        # Get story outline if available
+        story_outline_summary = "Story outline unavailable"
+        if hasattr(self.memory, "story_outline") and self.memory.story_outline:
+            story_outline = self.memory.story_outline
+            story_outline_summary = f"Title: {story_outline.title}\n"
+            
+            # Add act information
+            if act_number <= len(story_outline.acts):
+                act = story_outline.acts[act_number - 1]
+                story_outline_summary += f"Act {act_number}: {act.get('description', 'No description')}\n"
+                
+                # Add key events for the act
+                if "key_events" in act and act["key_events"]:
+                    if scene_number <= len(act["key_events"]):
+                        story_outline_summary += f"Scene {scene_number} outline: {act['key_events'][scene_number - 1]}\n"
+        
+        # Get previous scenes summary
+        previous_scenes_summary = context.get("previous_scenes_summary", "No previous scenes available.")
+        
+        prompt = f"""Analyze the narrative structure in this theatrical scene:
+
+Scene:
+{content}
+
+Story Context:
+{story_outline_summary}
+
+Previous Scenes:
+{previous_scenes_summary}
+
+Consider:
+1. Plot progression and pacing
+2. Narrative coherence with the larger story
+3. Scene purpose and contribution to the plot
+4. Character motivations and consistency
+5. Conflict development
+6. Scene resolution
+
+Provide a detailed analysis with:
+1. A score from 0.0 to 1.0 rating the narrative quality
+2. Specific feedback on narrative structure
+3. Concrete suggestions for improvement
+4. Specific examples from the scene that demonstrate strengths or areas for improvement
+5. A priority level (1-5, where 1 is highest priority)
+
+Format your response as:
+SCORE: [0.0-1.0]
+FEEDBACK: [detailed feedback]
+SUGGESTIONS:
+- [suggestion 1]
+- [suggestion 2]
+EXAMPLES:
+- [example 1]
+- [example 2]
+PRIORITY: [1-5]"""
+
+        response = llm.invoke(prompt)
+        return self._parse_advisor_response(response.content)
+    
+    def _parse_advisor_response(self, response_text: str) -> AdvisorFeedback:
+        """Parse the advisor response into structured feedback."""
+        lines = response_text.split('\n')
+        score = 0.7  # Default score
+        feedback = "Narrative structure needs improvement"  # Default feedback
+        suggestions = []
+        examples = []
+        priority = 2  # Default priority
+        
+        current_section = None
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            if line.startswith('SCORE:'):
+                try:
+                    score = float(line.split(':')[1].strip())
+                except (ValueError, IndexError):
+                    pass
+            elif line.startswith('FEEDBACK:'):
+                feedback = line.split(':')[1].strip()
+            elif line.startswith('SUGGESTIONS:'):
+                current_section = 'suggestions'
+            elif line.startswith('EXAMPLES:'):
+                current_section = 'examples'
+            elif line.startswith('PRIORITY:'):
+                try:
+                    priority = int(line.split(':')[1].strip())
+                except (ValueError, IndexError):
+                    pass
+            elif line.startswith('- '):
+                if current_section == 'suggestions':
+                    suggestions.append(line[2:])
+                elif current_section == 'examples':
+                    examples.append(line[2:])
+        
+        return AdvisorFeedback(
+            score=score,
+            feedback=feedback,
+            suggestions=suggestions,
+            specific_examples=examples,
+            priority=priority
+        )
+
+
+class DialogueAdvisor(TheatricalAdvisor):
+    """
+    Advisor specialized in dialogue quality and character voice.
+    """
+    
+    def __init__(self, name: str, llm_manager: LLMManager, memory: TheatricalMemory):
+        """Initialize the dialogue advisor."""
+        super().__init__(
+            name=name,
+            expertise=AdvisorType.DIALOGUE,
+            llm_manager=llm_manager,
+            memory=memory
+        )
+    
+    def analyze(self, content: str, context: Dict[str, Any]) -> AdvisorFeedback:
+        """
+        Analyze dialogue aspects of a scene.
+        
+        Args:
+            content (str): The text of the scene to analyze.
+            context (Dict[str, Any]): Additional context for analysis.
+            
+        Returns:
+            AdvisorFeedback: Structured feedback including score, suggestions, and priority.
+        """
+        llm = self.get_llm()
+        
+        # Get character information
+        characters = []
+        if hasattr(self.memory, "character_profiles"):
+            for char_id, profile in self.memory.character_profiles.items():
+                characters.append({
+                    "name": profile.name,
+                    "background": getattr(profile, "background", ""),
+                    "voice": getattr(profile, "voice", ""),
+                    "personality": getattr(profile, "personality", "")
+                })
+        
+        characters_info = json.dumps(characters, indent=2) if characters else "No character information available."
+        
+        prompt = f"""Analyze the dialogue in this theatrical scene:
+
+Scene:
+{content}
+
+Character Information:
+{characters_info}
+
+Analyze the dialogue for:
+1. Character voice consistency
+2. Dialogue authenticity and naturalism
+3. Subtext and depth
+4. Pacing and rhythm
+5. Purpose and advancement of plot through dialogue
+6. Character relationships expressed through dialogue
+
+Provide a detailed analysis with:
+1. A score from 0.0 to 1.0 rating the dialogue quality
+2. Specific feedback on dialogue strengths and weaknesses
+3. Concrete suggestions for improvement
+4. Specific examples from the scene that demonstrate strengths or areas for improvement
+5. A priority level (1-5, where 1 is highest priority)
+
+Format your response as:
+SCORE: [0.0-1.0]
+FEEDBACK: [detailed feedback]
+SUGGESTIONS:
+- [suggestion 1]
+- [suggestion 2]
+EXAMPLES:
+- [example 1]
+- [example 2]
+PRIORITY: [1-5]"""
+
+        response = llm.invoke(prompt)
+        return self._parse_advisor_response(response.content)
+    
+    def _parse_advisor_response(self, response_text: str) -> AdvisorFeedback:
+        """Parse the advisor response into structured feedback."""
+        lines = response_text.split('\n')
+        score = 0.7  # Default score
+        feedback = "Dialogue needs improvement"  # Default feedback
+        suggestions = []
+        examples = []
+        priority = 2  # Default priority
+        
+        current_section = None
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            if line.startswith('SCORE:'):
+                try:
+                    score = float(line.split(':')[1].strip())
+                except (ValueError, IndexError):
+                    pass
+            elif line.startswith('FEEDBACK:'):
+                feedback = line.split(':')[1].strip()
+            elif line.startswith('SUGGESTIONS:'):
+                current_section = 'suggestions'
+            elif line.startswith('EXAMPLES:'):
+                current_section = 'examples'
+            elif line.startswith('PRIORITY:'):
+                try:
+                    priority = int(line.split(':')[1].strip())
+                except (ValueError, IndexError):
+                    pass
+            elif line.startswith('- '):
+                if current_section == 'suggestions':
+                    suggestions.append(line[2:])
+                elif current_section == 'examples':
+                    examples.append(line[2:])
+        
+        return AdvisorFeedback(
+            score=score,
+            feedback=feedback,
+            suggestions=suggestions,
+            specific_examples=examples,
+            priority=priority
+        )
+
+
+class CharacterAdvisor(TheatricalAdvisor):
+    """
+    Advisor specialized in character development and consistency.
+    """
+    
+    def __init__(self, name: str, llm_manager: LLMManager, memory: TheatricalMemory):
+        """Initialize the character advisor."""
+        super().__init__(
+            name=name,
+            expertise=AdvisorType.CHARACTER,
+            llm_manager=llm_manager,
+            memory=memory
+        )
+    
+    def analyze(self, content: str, context: Dict[str, Any]) -> AdvisorFeedback:
+        """
+        Analyze character aspects of a scene.
+        
+        Args:
+            content (str): The text of the scene to analyze.
+            context (Dict[str, Any]): Additional context for analysis.
+            
+        Returns:
+            AdvisorFeedback: Structured feedback including score, suggestions, and priority.
+        """
+        llm = self.get_llm()
+        
+        # Get character arcs if available
+        character_arcs = {}
+        if hasattr(self.memory, "character_profiles"):
+            for char_id, profile in self.memory.character_profiles.items():
+                if hasattr(profile, "development_arc"):
+                    character_arcs[profile.name] = [
+                        {"stage": arc.stage, "description": arc.description}
+                        for arc in profile.development_arc
+                    ]
+        
+        characters_info = json.dumps(character_arcs, indent=2) if character_arcs else "No character arc information available."
+        
+        prompt = f"""Analyze the character development in this theatrical scene:
+
+Scene:
+{content}
+
+Character Arcs:
+{characters_info}
+
+Analyze the characters for:
+1. Character consistency with established traits
+2. Growth and development within arcs
+3. Motivations and goals
+4. Relationships and interactions
+5. Emotional authenticity
+6. Actions aligned with character traits
+
+Provide a detailed analysis with:
+1. A score from 0.0 to 1.0 rating the character development quality
+2. Specific feedback on character strengths and weaknesses
+3. Concrete suggestions for improvement
+4. Specific examples from the scene that demonstrate strengths or areas for improvement
+5. A priority level (1-5, where 1 is highest priority)
+
+Format your response as:
+SCORE: [0.0-1.0]
+FEEDBACK: [detailed feedback]
+SUGGESTIONS:
+- [suggestion 1]
+- [suggestion 2]
+EXAMPLES:
+- [example 1]
+- [example 2]
+PRIORITY: [1-5]"""
+
+        response = llm.invoke(prompt)
+        return self._parse_advisor_response(response.content)
+    
+    def _parse_advisor_response(self, response_text: str) -> AdvisorFeedback:
+        """Parse the advisor response into structured feedback."""
+        lines = response_text.split('\n')
+        score = 0.7  # Default score
+        feedback = "Character development needs improvement"  # Default feedback
+        suggestions = []
+        examples = []
+        priority = 2  # Default priority
+        
+        current_section = None
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            if line.startswith('SCORE:'):
+                try:
+                    score = float(line.split(':')[1].strip())
+                except (ValueError, IndexError):
+                    pass
+            elif line.startswith('FEEDBACK:'):
+                feedback = line.split(':')[1].strip()
+            elif line.startswith('SUGGESTIONS:'):
+                current_section = 'suggestions'
+            elif line.startswith('EXAMPLES:'):
+                current_section = 'examples'
+            elif line.startswith('PRIORITY:'):
+                try:
+                    priority = int(line.split(':')[1].strip())
+                except (ValueError, IndexError):
+                    pass
+            elif line.startswith('- '):
+                if current_section == 'suggestions':
+                    suggestions.append(line[2:])
+                elif current_section == 'examples':
+                    examples.append(line[2:])
+        
+        return AdvisorFeedback(
+            score=score,
+            feedback=feedback,
+            suggestions=suggestions,
+            specific_examples=examples,
+            priority=priority
+        )
+
+
+class ScenicAdvisor(TheatricalAdvisor):
+    """
+    Advisor specialized in scenic elements, staging, and technical aspects.
+    """
+    
+    def __init__(self, name: str, llm_manager: LLMManager, memory: TheatricalMemory):
+        """Initialize the scenic advisor."""
+        super().__init__(
+            name=name,
+            expertise=AdvisorType.SCENIC,
+            llm_manager=llm_manager,
+            memory=memory
+        )
+    
+    def analyze(self, content: str, context: Dict[str, Any]) -> AdvisorFeedback:
+        """
+        Analyze scenic aspects of a scene.
+        
+        Args:
+            content (str): The text of the scene to analyze.
+            context (Dict[str, Any]): Additional context for analysis.
+            
+        Returns:
+            AdvisorFeedback: Structured feedback including score, suggestions, and priority.
+        """
+        llm = self.get_llm()
+        
+        # Get technical requirements
+        technical_reqs = context.get("technical_requirements", {})
+        technical_info = json.dumps(technical_reqs, indent=2) if technical_reqs else "No technical requirements specified."
+        
+        prompt = f"""Analyze the scenic elements in this theatrical scene:
+
+Scene:
+{content}
+
+Technical Requirements:
+{technical_info}
+
+Analyze the scene for:
+1. Staging clarity and effectiveness
+2. Use of space and movement
+3. Integration of technical elements (lighting, sound, props)
+4. Visual storytelling
+5. Atmosphere and mood creation
+6. Practical feasibility of staging
+
+Provide a detailed analysis with:
+1. A score from 0.0 to 1.0 rating the scenic quality
+2. Specific feedback on scenic strengths and weaknesses
+3. Concrete suggestions for improvement
+4. Specific examples from the scene that demonstrate strengths or areas for improvement
+5. A priority level (1-5, where 1 is highest priority)
+
+Format your response as:
+SCORE: [0.0-1.0]
+FEEDBACK: [detailed feedback]
+SUGGESTIONS:
+- [suggestion 1]
+- [suggestion 2]
+EXAMPLES:
+- [example 1]
+- [example 2]
+PRIORITY: [1-5]"""
+
+        response = llm.invoke(prompt)
+        return self._parse_advisor_response(response.content)
+    
+    def _parse_advisor_response(self, response_text: str) -> AdvisorFeedback:
+        """Parse the advisor response into structured feedback."""
+        lines = response_text.split('\n')
+        score = 0.7  # Default score
+        feedback = "Scenic elements need improvement"  # Default feedback
+        suggestions = []
+        examples = []
+        priority = 2  # Default priority
+        
+        current_section = None
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            if line.startswith('SCORE:'):
+                try:
+                    score = float(line.split(':')[1].strip())
+                except (ValueError, IndexError):
+                    pass
+            elif line.startswith('FEEDBACK:'):
+                feedback = line.split(':')[1].strip()
+            elif line.startswith('SUGGESTIONS:'):
+                current_section = 'suggestions'
+            elif line.startswith('EXAMPLES:'):
+                current_section = 'examples'
+            elif line.startswith('PRIORITY:'):
+                try:
+                    priority = int(line.split(':')[1].strip())
+                except (ValueError, IndexError):
+                    pass
+            elif line.startswith('- '):
+                if current_section == 'suggestions':
+                    suggestions.append(line[2:])
+                elif current_section == 'examples':
+                    examples.append(line[2:])
+        
+        return AdvisorFeedback(
+            score=score,
+            feedback=feedback,
+            suggestions=suggestions,
+            specific_examples=examples,
+            priority=priority
+        )
+
+
+class PacingAdvisor(TheatricalAdvisor):
+    """
+    Advisor specialized in scene pacing and timing.
+    """
+    
+    def __init__(self, name: str, llm_manager: LLMManager, memory: TheatricalMemory):
+        """Initialize the pacing advisor."""
+        super().__init__(
+            name=name,
+            expertise=AdvisorType.PACING,
+            llm_manager=llm_manager,
+            memory=memory
+        )
+    
+    def analyze(self, content: str, context: Dict[str, Any]) -> AdvisorFeedback:
+        """
+        Analyze pacing aspects of a scene.
+        
+        Args:
+            content (str): The text of the scene to analyze.
+            context (Dict[str, Any]): Additional context for analysis.
+            
+        Returns:
+            AdvisorFeedback: Structured feedback including score, suggestions, and priority.
+        """
+        llm = self.get_llm()
+        
+        # Get act and scene information
+        act_number = context.get("act_number", 1)
+        scene_number = context.get("scene_number", 1)
+        
+        # Determine expected pacing based on act and scene position
+        expected_pacing = "moderate"
+        if act_number == 1:
+            if scene_number == 1:
+                expected_pacing = "slower, establishing"
+            elif scene_number == 5:
+                expected_pacing = "building to act transition"
+        elif act_number == 2:
+            if scene_number == 3:
+                expected_pacing = "midpoint climax"
+            elif scene_number == 5:
+                expected_pacing = "heightened tension"
+        elif act_number == 3:
+            if scene_number < 3:
+                expected_pacing = "building tension"
+            elif scene_number == 5:
+                expected_pacing = "climactic resolution"
+        
+        prompt = f"""Analyze the pacing in this theatrical scene:
+
+Scene:
+{content}
+
+Act: {act_number}, Scene: {scene_number}
+Expected Pacing: {expected_pacing}
+
+Analyze the scene for:
+1. Overall rhythm and flow
+2. Tension building and release
+3. Scene length and density
+4. Dialogue pacing
+5. Action and movement pacing
+6. Appropriate pacing for scene position in the larger structure
+
+Provide a detailed analysis with:
+1. A score from 0.0 to 1.0 rating the pacing quality
+2. Specific feedback on pacing strengths and weaknesses
+3. Concrete suggestions for improvement
+4. Specific examples from the scene that demonstrate strengths or areas for improvement
+5. A priority level (1-5, where 1 is highest priority)
+
+Format your response as:
+SCORE: [0.0-1.0]
+FEEDBACK: [detailed feedback]
+SUGGESTIONS:
+- [suggestion 1]
+- [suggestion 2]
+EXAMPLES:
+- [example 1]
+- [example 2]
+PRIORITY: [1-5]"""
+
+        response = llm.invoke(prompt)
+        return self._parse_advisor_response(response.content)
+    
+    def _parse_advisor_response(self, response_text: str) -> AdvisorFeedback:
+        """Parse the advisor response into structured feedback."""
+        lines = response_text.split('\n')
+        score = 0.7  # Default score
+        feedback = "Pacing needs adjustment"  # Default feedback
+        suggestions = []
+        examples = []
+        priority = 2  # Default priority
+        
+        current_section = None
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            if line.startswith('SCORE:'):
+                try:
+                    score = float(line.split(':')[1].strip())
+                except (ValueError, IndexError):
+                    pass
+            elif line.startswith('FEEDBACK:'):
+                feedback = line.split(':')[1].strip()
+            elif line.startswith('SUGGESTIONS:'):
+                current_section = 'suggestions'
+            elif line.startswith('EXAMPLES:'):
+                current_section = 'examples'
+            elif line.startswith('PRIORITY:'):
+                try:
+                    priority = int(line.split(':')[1].strip())
+                except (ValueError, IndexError):
+                    pass
+            elif line.startswith('- '):
+                if current_section == 'suggestions':
+                    suggestions.append(line[2:])
+                elif current_section == 'examples':
+                    examples.append(line[2:])
+        
+        return AdvisorFeedback(
+            score=score,
+            feedback=feedback,
+            suggestions=suggestions,
+            specific_examples=examples,
+            priority=priority
+        )
+
+
+class ThematicAdvisor(TheatricalAdvisor):
+    """
+    Advisor specialized in thematic development and symbolism.
+    """
+    
+    def __init__(self, name: str, llm_manager: LLMManager, memory: TheatricalMemory):
+        """Initialize the thematic advisor."""
+        super().__init__(
+            name=name,
+            expertise=AdvisorType.THEMATIC,
+            llm_manager=llm_manager,
+            memory=memory
+        )
+    
+    def analyze(self, content: str, context: Dict[str, Any]) -> AdvisorFeedback:
+        """
+        Analyze thematic aspects of a scene.
+        
+        Args:
+            content (str): The text of the scene to analyze.
+            context (Dict[str, Any]): Additional context for analysis.
+            
+        Returns:
+            AdvisorFeedback: Structured feedback including score, suggestions, and priority.
+        """
+        llm = self.get_llm()
+        
+        # Get themes if available
+        themes = []
+        if hasattr(self.memory, "story_outline") and self.memory.story_outline:
+            if hasattr(self.memory.story_outline, "themes"):
+                themes = self.memory.story_outline.themes
+        
+        themes_info = json.dumps(themes, indent=2) if themes else "No theme information available."
+        
+        prompt = f"""Analyze the thematic elements in this theatrical scene:
+
+Scene:
+{content}
+
+Established Themes:
+{themes_info}
+
+Analyze the scene for:
+1. Theme development and exploration
+2. Symbolism and motifs
+3. Thematic consistency
+4. Subtext and layered meaning
+5. Integration of themes with character and plot
+6. Thematic evolution across the narrative
+
+Provide a detailed analysis with:
+1. A score from 0.0 to 1.0 rating the thematic quality
+2. Specific feedback on thematic strengths and weaknesses
+3. Concrete suggestions for improvement
+4. Specific examples from the scene that demonstrate strengths or areas for improvement
+5. A priority level (1-5, where 1 is highest priority)
+
+Format your response as:
+SCORE: [0.0-1.0]
+FEEDBACK: [detailed feedback]
+SUGGESTIONS:
+- [suggestion 1]
+- [suggestion 2]
+EXAMPLES:
+- [example 1]
+- [example 2]
+PRIORITY: [1-5]"""
+
+        response = llm.invoke(prompt)
+        return self._parse_advisor_response(response.content)
+    
+    def _parse_advisor_response(self, response_text: str) -> AdvisorFeedback:
+        """Parse the advisor response into structured feedback."""
+        lines = response_text.split('\n')
+        score = 0.7  # Default score
+        feedback = "Thematic development needs enhancement"  # Default feedback
+        suggestions = []
+        examples = []
+        priority = 2  # Default priority
+        
+        current_section = None
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            if line.startswith('SCORE:'):
+                try:
+                    score = float(line.split(':')[1].strip())
+                except (ValueError, IndexError):
+                    pass
+            elif line.startswith('FEEDBACK:'):
+                feedback = line.split(':')[1].strip()
+            elif line.startswith('SUGGESTIONS:'):
+                current_section = 'suggestions'
+            elif line.startswith('EXAMPLES:'):
+                current_section = 'examples'
+            elif line.startswith('PRIORITY:'):
+                try:
+                    priority = int(line.split(':')[1].strip())
+                except (ValueError, IndexError):
+                    pass
+            elif line.startswith('- '):
+                if current_section == 'suggestions':
+                    suggestions.append(line[2:])
+                elif current_section == 'examples':
+                    examples.append(line[2:])
+        
+        return AdvisorFeedback(
+            score=score,
+            feedback=feedback,
+            suggestions=suggestions,
+            specific_examples=examples,
+            priority=priority
+        )
 
 
 class NarrativeContinuityAdvisor(TheatricalAdvisor):
@@ -396,9 +1159,63 @@ class AdvisorManager(BaseModel):
     
     def _register_default_advisors(self) -> None:
         """Register default advisors."""
-        # This would normally create and register default advisors
-        # but we'll leave it empty for now as they should be registered manually
-        pass
+        # Register the default set of advisors
+        self.register_advisor(
+            NarrativeAdvisor(
+                name="narrative_advisor",
+                llm_manager=self.llm_manager,
+                memory=self.memory
+            )
+        )
+        
+        self.register_advisor(
+            DialogueAdvisor(
+                name="dialogue_advisor",
+                llm_manager=self.llm_manager,
+                memory=self.memory
+            )
+        )
+        
+        self.register_advisor(
+            CharacterAdvisor(
+                name="character_advisor",
+                llm_manager=self.llm_manager,
+                memory=self.memory
+            )
+        )
+        
+        self.register_advisor(
+            ScenicAdvisor(
+                name="scenic_advisor",
+                llm_manager=self.llm_manager,
+                memory=self.memory
+            )
+        )
+        
+        self.register_advisor(
+            PacingAdvisor(
+                name="pacing_advisor",
+                llm_manager=self.llm_manager,
+                memory=self.memory
+            )
+        )
+        
+        self.register_advisor(
+            ThematicAdvisor(
+                name="thematic_advisor",
+                llm_manager=self.llm_manager,
+                memory=self.memory
+            )
+        )
+        
+        self.register_advisor(
+            NarrativeContinuityAdvisor(
+                name="continuity_advisor",
+                expertise="narrative_continuity",
+                llm_manager=self.llm_manager,
+                memory=self.memory
+            )
+        )
     
     def register_advisor(self, advisor: TheatricalAdvisor) -> None:
         """Register an advisor with the manager."""
@@ -436,8 +1253,19 @@ class AdvisorManager(BaseModel):
         
         # Run analysis with each advisor
         for advisor in advisors:
-            feedback = advisor.analyze(content, context)
-            results[advisor.name] = feedback
+            try:
+                feedback = advisor.analyze(content, context)
+                results[advisor.name] = feedback
+            except Exception as e:
+                logger.error(f"Error running analysis with {advisor.name}: {str(e)}")
+                # Create a fallback feedback object for the failed advisor
+                results[advisor.name] = AdvisorFeedback(
+                    score=0.5,
+                    feedback=f"Analysis failed: {str(e)}",
+                    suggestions=["Try again with more context"],
+                    specific_examples=[],
+                    priority=3
+                )
         
         return results
     
@@ -499,5 +1327,38 @@ class AdvisorManager(BaseModel):
             "score": avg_score,
             "suggestions": all_suggestions,
             "examples": all_examples,
-            "advisor_count": len(results)
+            "advisor_count": len(results),
+            "detailed_feedback": results
         }
+
+# Create an advisor factory to easily get advisors of specific types
+def get_advisor(advisor_type: AdvisorType, llm_manager: LLMManager, memory: TheatricalMemory, name: Optional[str] = None) -> TheatricalAdvisor:
+    """
+    Create an advisor of the specified type.
+    
+    Args:
+        advisor_type: The type of advisor to create
+        llm_manager: Manager for LLM interactions
+        memory: Production memory
+        name: Optional name for the advisor
+        
+    Returns:
+        TheatricalAdvisor: An instance of the requested advisor type
+    """
+    advisor_map: Dict[AdvisorType, Type[TheatricalAdvisor]] = {
+        AdvisorType.NARRATIVE: NarrativeAdvisor,
+        AdvisorType.DIALOGUE: DialogueAdvisor,
+        AdvisorType.CHARACTER: CharacterAdvisor,
+        AdvisorType.SCENIC: ScenicAdvisor,
+        AdvisorType.PACING: PacingAdvisor,
+        AdvisorType.THEMATIC: ThematicAdvisor,
+    }
+    
+    advisor_class = advisor_map.get(advisor_type)
+    if not advisor_class:
+        raise ValueError(f"Unsupported advisor type: {advisor_type}")
+    
+    if name is None:
+        name = f"{advisor_type}_advisor"
+        
+    return advisor_class(name=name, llm_manager=llm_manager, memory=memory)

@@ -29,6 +29,10 @@ CONTINUITY REQUIREMENTS:
 6. Must create dramatic tension
 7. Must set up the next scene's events
 
+{uniqueness_constraint}
+
+{scene_directive}
+
 SCENE STRUCTURE REQUIREMENTS:
 1. Length: {min_length}-{max_length} characters
 2. Must have a clear beginning, middle, and end
@@ -38,6 +42,8 @@ SCENE STRUCTURE REQUIREMENTS:
 6. Must include sensory details (sight, sound, smell, etc.)
 7. Must have clear character motivations
 8. Must include emotional beats
+{memory_context}
+{narrative_context}
 
 FORMATTING REQUIREMENTS:
 1. Character names must be in ALL CAPS

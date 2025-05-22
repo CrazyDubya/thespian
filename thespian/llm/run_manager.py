@@ -12,6 +12,13 @@ import shutil
 
 logger = logging.getLogger(__name__)
 
+class DateTimeEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles datetime objects."""
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
 class RunManager:
     """Manages play generation runs and their artifacts."""
     
@@ -36,7 +43,7 @@ class RunManager:
     def _save_index(self):
         """Save the run index."""
         with open(self.index_file, "w") as f:
-            json.dump(self.index, f, indent=2)
+            json.dump(self.index, f, indent=2, cls=DateTimeEncoder)
     
     def start_run(self, run_id: str) -> None:
         """Start a new run."""
@@ -92,7 +99,7 @@ class RunManager:
         
         artifact_path = artifact_dir / f"{name}.json"
         with open(artifact_path, "w") as f:
-            json.dump(data, f, indent=2)
+            json.dump(data, f, indent=2, cls=DateTimeEncoder)
             
         logger.info(f"Saved artifact {name} for run {run_id}")
     
@@ -169,7 +176,7 @@ class RunManager:
         
         metadata_path = self.current_run_dir / "metadata.json"
         with open(metadata_path, "w") as f:
-            json.dump(metadata, f, indent=2)
+            json.dump(metadata, f, indent=2, cls=DateTimeEncoder)
     
     def _load_metadata(self) -> Optional[Dict[str, Any]]:
         """Load run metadata."""
@@ -218,7 +225,7 @@ class RunManager:
             metadata.update(details)
         
         with open(metadata_file, "w") as f:
-            json.dump(metadata, f, indent=2)
+            json.dump(metadata, f, indent=2, cls=DateTimeEncoder)
         
         self.index["runs"][run_id]["status"] = status
         self._save_index()
@@ -233,20 +240,24 @@ class RunManager:
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         with open(act_dir / f"plan_{timestamp}.json", "w") as f:
-            json.dump(plan, f, indent=2)
+            json.dump(plan, f, indent=2, cls=DateTimeEncoder)
         
         # Update metadata
         metadata_file = run_dir / "metadata.json"
         with open(metadata_file, "r") as f:
             metadata = json.load(f)
         
+        # Initialize acts key if it doesn't exist
+        if "acts" not in metadata:
+            metadata["acts"] = {}
+            
         metadata["acts"][str(act_number)] = {
             "status": "planned",
             "plan_timestamp": timestamp
         }
         
         with open(metadata_file, "w") as f:
-            json.dump(metadata, f, indent=2)
+            json.dump(metadata, f, indent=2, cls=DateTimeEncoder)
         
         logger.info(f"Saved plan for Act {act_number} in run {run_id}")
     
@@ -259,7 +270,7 @@ class RunManager:
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         with open(scene_dir / f"scene_{timestamp}.json", "w") as f:
-            json.dump(scene_data, f, indent=2)
+            json.dump(scene_data, f, indent=2, cls=DateTimeEncoder)
         
         logger.info(f"Saved Scene {scene_number} for Act {act_number} in run {run_id}")
     

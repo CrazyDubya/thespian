@@ -136,9 +136,10 @@ class EnhancedCharacterProfile(CharacterProfile):
         
     def get_current_emotional_state(self) -> Optional[EmotionalState]:
         """Get the character's current emotional state."""
-        if not self.emotional_states:
+        emotional_states = getattr(self, 'emotional_states', [])
+        if not emotional_states or not isinstance(emotional_states, list):
             return None
-        return self.emotional_states[-1]
+        return emotional_states[-1]
     
     def get_relationship_with(self, other_character: str) -> Optional[str]:
         """Get the current relationship status with another character."""
@@ -153,14 +154,18 @@ class EnhancedCharacterProfile(CharacterProfile):
         if not self.development_arc:
             return {"status": "not_started", "summary": "Character development has not yet begun."}
         
-        current_stage = self.development_arc[-1].stage
-        stages = [point.stage for point in self.development_arc]
+        development_arc = getattr(self, 'development_arc', [])
+        if not development_arc or not isinstance(development_arc, list):
+            return {"status": "not_started", "summary": "Character development has not yet begun."}
+            
+        current_stage = development_arc[-1].stage
+        stages = [point.stage for point in development_arc]
         
         return {
             "status": "in_progress",
             "current_stage": current_stage,
             "stages_completed": stages,
-            "summary": self.development_arc[-1].description
+            "summary": development_arc[-1].description
         }
 
 
@@ -338,14 +343,21 @@ class EnhancedTheatricalMemory(TheatricalMemory):
     scene_analysis: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     character_db_path: Optional[str] = Field(default=None)
     
-    def __init__(self, **data):
+    def __init__(self, db_path: Optional[str] = None, **data):
         """Initialize the memory system."""
+        if db_path:
+            data['db_path'] = db_path
         super().__init__(**data)
         self.continuity_tracker = NarrativeContinuityTracker()
         
         # If using the default file path, convert to enhanced profiles
-        if self.db_path and os.path.exists(self.db_path):
+        if hasattr(self, '_db_path') and self._db_path and os.path.exists(self._db_path):
             self._upgrade_profiles()
+    
+    @property
+    def db_path(self) -> Optional[str]:
+        """Get the database path for compatibility."""
+        return str(self._db_path) if hasattr(self, '_db_path') and self._db_path else None
             
     def _upgrade_profiles(self) -> None:
         """Upgrade existing basic profiles to enhanced profiles."""
@@ -398,7 +410,7 @@ class EnhancedTheatricalMemory(TheatricalMemory):
                 self.character_profiles[char_id] = profile
         
         # Save to disk if path provided
-        if self.db_path:
+        if hasattr(self, '_db_path') and self._db_path:
             self._save_profiles()
     
     def get_character_profile(self, char_id: str) -> Optional[EnhancedCharacterProfile]:
@@ -428,43 +440,102 @@ class EnhancedTheatricalMemory(TheatricalMemory):
             return
         
         # Create prompt for character analysis
-        prompt = f"""Analyze how the character {profile.name} has developed in this scene.
+        development_arc = getattr(profile, 'development_arc', [])
+        current_arc_stage = development_arc[-1].stage if development_arc and isinstance(development_arc, list) else "Not started"
+        current_arc_desc = development_arc[-1].description if development_arc and isinstance(development_arc, list) else "No development yet"
+        current_emotion = profile.get_current_emotional_state().emotion if profile.get_current_emotional_state() else "Unknown"
+        
+        prompt = """Analyze how the character {} has developed in this scene.
         
         SCENE CONTENT:
-        {scene_content}
+        {}
         
         CURRENT CHARACTER STATE:
-        Name: {profile.name}
-        Background: {profile.background}
-        Current Arc Stage: {profile.development_arc[-1].stage if profile.development_arc else "Not started"}
-        Current Arc Description: {profile.development_arc[-1].description if profile.development_arc else "No development yet"}
-        Current Emotional State: {profile.get_current_emotional_state().emotion if profile.get_current_emotional_state() else "Unknown"}
+        Name: {}
+        Background: {}
+        Current Arc Stage: {}
+        Current Arc Description: {}
+        Current Emotional State: {}
         
         ANALYSIS INSTRUCTIONS:
-        1. Identify any character development for {profile.name}
+        1. Identify any character development for {}
         2. Detect emotional state changes
         3. Find relationship developments with other characters
         4. Identify new beliefs or values
         5. Detect any key experiences
         6. Identify recurring patterns
+
+RESPOND WITH VALID JSON ONLY - NO OTHER TEXT. Format exactly as:
+{{
+  "arc_development": {{"stage": "stage_name", "description": "description", "trigger": "what_caused_it"}},
+  "emotional_state": {{"emotion": "emotion_name", "cause": "what_caused_it", "intensity": 0.5}},
+  "relationship_changes": [
+    {{"other_character": "name", "status": "status", "change": "description"}}
+  ],
+  "belief_changes": [
+    {{"old_belief": "description", "new_belief": "description", "cause": "what_caused_it"}}
+  ],
+  "key_experiences": [
+    {{"description": "description", "impact": "impact"}}
+  ],
+  "recurring_patterns": [
+    {{"pattern": "description", "significance": "significance"}}
+  ]
+}}
+
+CRITICAL: Return ONLY the JSON object. No explanatory text before or after.
+        """.format(profile.name, scene_content, profile.name, profile.background, 
+                   current_arc_stage, current_arc_desc, current_emotion, profile.name)
         
-        Format your response as JSON with these keys:
-        - "arc_development": {"stage": "stage_name", "description": "description", "trigger": "what_caused_it"}
-        - "emotional_state": {"emotion": "emotion_name", "cause": "what_caused_it", "intensity": 0.0-1.0}
-        - "relationship_changes": [{"other_character": "name", "status": "status", "change": "description"}]
-        - "belief_changes": [{"old_belief": "description", "new_belief": "description", "cause": "what_caused_it"}]
-        - "key_experiences": [{"description": "description", "impact": "impact"}]
-        - "recurring_patterns": [{"pattern": "description", "significance": "significance"}]
-        """
-        
-        # Invoke LLM for analysis
-        response = llm_invoke_func(prompt)
-        response_text = str(response.content if hasattr(response, "content") else response)
-        
-        # Extract JSON data
-        try:
-            data = json.loads(response_text)
+        # Try LLM analysis with self-correction on failure
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            if attempt > 0:
+                # Add corrective feedback for retry
+                correction_prompt = f"""CORRECTION NEEDED: Your previous response failed JSON validation.
+
+Previous response that failed:
+{response_text[:1000]}...
+
+Error: {last_error}
+
+Please provide ONLY valid JSON with NO additional text. The response must be a single JSON object with exactly these keys:
+- "arc_development": object with required fields
+- "emotional_state": object with required fields
+- "relationship_changes": array of objects
+- "belief_changes": array of objects
+- "key_experiences": array of objects
+- "recurring_patterns": array of objects
+
+{prompt}"""
+                response = llm_invoke_func(correction_prompt)
+            else:
+                response = llm_invoke_func(prompt)
+                
+            response_text = str(response.content if hasattr(response, "content") else response)
             
+            # Extract JSON data with improved parsing
+            try:
+                # Try to extract JSON from the response if it's wrapped in text
+                json_start = response_text.find("{")
+                json_end = response_text.rfind("}") + 1
+                if json_start != -1 and json_end > json_start:
+                    json_text = response_text[json_start:json_end]
+                    data = json.loads(json_text)
+                else:
+                    # If no JSON braces found, try the whole response
+                    data = json.loads(response_text)
+                break  # Success, exit retry loop
+                
+            except (json.JSONDecodeError, ValueError) as e:
+                last_error = str(e)
+                logger.warning(f"Character update JSON parsing attempt {attempt + 1} failed: {last_error}")
+                if attempt == max_retries:
+                    # Final attempt failed, log and continue with fallback
+                    logger.error(f"All character update JSON parsing attempts failed: {last_error}")
+                    logger.error(f"Response text: {response_text[:500]}...")  # Log first 500 chars
+                    return  # Exit early if all attempts fail
+                continue            
             # Update character profile
             if "arc_development" in data:
                 arc_dev = data["arc_development"]
@@ -513,41 +584,99 @@ class EnhancedTheatricalMemory(TheatricalMemory):
             # Save updated profile
             self.update_character_profile(char_id, profile)
             
-        except json.JSONDecodeError:
-            logger.error("Failed to decode JSON from character analysis")
-        except Exception as e:
-            logger.error(f"Error updating character from scene: {str(e)}")
     
     def update_narrative_from_scene(self, scene_id: str, scene_content: str, llm_invoke_func: callable) -> None:
         """Update narrative continuity based on a scene."""
         # Create prompt for narrative analysis
-        prompt = f"""Analyze the narrative elements in this scene.
+        prompt = """Analyze the narrative elements in this scene and return ONLY valid JSON.
+
+SCENE CONTENT:
+{}
+
+ANALYSIS INSTRUCTIONS:
+1. Identify major plot points and their significance
+2. Identify thematic developments
+3. Identify cause-effect relationships
+4. Identify foreshadowing elements
+5. Identify any plot resolutions
+
+RESPOND WITH VALID JSON ONLY - NO OTHER TEXT. Format exactly as:
+{{
+  "plot_points": [
+    {{"description": "description", "significance": "significance", "characters_involved": ["name1", "name2"]}}
+  ],
+  "thematic_developments": [
+    {{"theme": "theme_name", "development": "how_it_developed"}}
+  ],
+  "causal_connections": [
+    {{"cause": "cause_description", "effect": "effect_description"}}
+  ],
+  "foreshadowing": [
+    {{"foreshadowing": "element_description", "payoff": "expected_payoff"}}
+  ],
+  "plot_resolutions": [
+    {{"plot_point": "plot_point_description", "resolution": "resolution_description"}}
+  ]
+}}
+
+CRITICAL: Return ONLY the JSON object. No explanatory text before or after.""".format(scene_content)
         
-        SCENE CONTENT:
-        {scene_content}
-        
-        ANALYSIS INSTRUCTIONS:
-        1. Identify major plot points and their significance
-        2. Identify thematic developments
-        3. Identify cause-effect relationships
-        4. Identify foreshadowing elements
-        5. Identify any plot resolutions
-        
-        Format your response as JSON with these keys:
-        - "plot_points": [{"description": "description", "significance": "significance", "characters_involved": ["name1", "name2"]}]
-        - "thematic_developments": [{"theme": "theme_name", "development": "how_it_developed"}]
-        - "causal_connections": [{"cause": "cause_description", "effect": "effect_description"}]
-        - "foreshadowing": [{"foreshadowing": "element_description", "payoff": "expected_payoff"}]
-        - "plot_resolutions": [{"plot_point": "plot_point_description", "resolution": "resolution_description"}]
-        """
-        
-        # Invoke LLM for analysis
-        response = llm_invoke_func(prompt)
-        response_text = str(response.content if hasattr(response, "content") else response)
-        
-        # Extract JSON data
-        try:
-            data = json.loads(response_text)
+        # Try LLM analysis with self-correction on failure
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            if attempt > 0:
+                # Add corrective feedback for retry
+                correction_prompt = f"""CORRECTION NEEDED: Your previous response failed JSON validation.
+
+Previous response that failed:
+{response_text[:1000]}...
+
+Error: {last_error}
+
+Please provide ONLY valid JSON with NO additional text. The response must be a single JSON object with exactly these keys:
+- "plot_points": array of objects
+- "thematic_developments": array of objects
+- "causal_connections": array of objects
+- "foreshadowing": array of objects
+- "plot_resolutions": array of objects
+
+{prompt}"""
+                response = llm_invoke_func(correction_prompt)
+            else:
+                response = llm_invoke_func(prompt)
+                
+            response_text = str(response.content if hasattr(response, "content") else response)
+            
+            # Extract JSON data with improved parsing
+            try:
+                # Try to extract JSON from the response if it's wrapped in text
+                json_start = response_text.find("{")
+                json_end = response_text.rfind("}") + 1
+                if json_start != -1 and json_end > json_start:
+                    json_text = response_text[json_start:json_end]
+                    data = json.loads(json_text)
+                else:
+                    # If no JSON braces found, try the whole response
+                    data = json.loads(response_text)
+                break  # Success, exit retry loop
+                
+            except (json.JSONDecodeError, ValueError) as e:
+                last_error = str(e)
+                logger.warning(f"Narrative analysis JSON parsing attempt {attempt + 1} failed: {last_error}")
+                if attempt == max_retries:
+                    # Final attempt failed, log and continue with fallback
+                    logger.error(f"All narrative analysis JSON parsing attempts failed: {last_error}")
+                    logger.error(f"Response text: {response_text[:500]}...")  # Log first 500 chars
+                    # Create minimal analysis if parsing fails
+                    data = {
+                        "plot_points": [],
+                        "thematic_developments": [],
+                        "causal_connections": [],
+                        "foreshadowing": [],
+                        "plot_resolutions": []
+                    }
+                    break
+                continue
             
             # Update narrative tracker
             if "plot_points" in data:
@@ -594,10 +723,6 @@ class EnhancedTheatricalMemory(TheatricalMemory):
             # Save analysis to scene analysis dict
             self.scene_analysis[scene_id] = data
             
-        except json.JSONDecodeError:
-            logger.error("Failed to decode JSON from narrative analysis")
-        except Exception as e:
-            logger.error(f"Error updating narrative from scene: {str(e)}")
     
     def get_narrative_continuity(self) -> NarrativeContinuityTracker:
         """Get the narrative continuity tracker."""
@@ -626,15 +751,15 @@ class EnhancedTheatricalMemory(TheatricalMemory):
         # Get thematic developments
         themes = {}
         for theme, developments in self.continuity_tracker.thematic_developments.items():
-            if developments:
+            if developments and isinstance(developments, list) and len(developments) > 0:
                 themes[theme] = developments[-1].development
         
         return {
             "act_number": act_number,
             "scene_number": scene_number,
             "character_states": character_states,
-            "unresolved_plots": [point.dict() for point in unresolved_plots],
-            "pending_foreshadowing": [element.dict() for element in pending_foreshadowing],
+            "unresolved_plots": [point.model_dump() if hasattr(point, 'model_dump') else point.dict() for point in unresolved_plots],
+            "pending_foreshadowing": [element.model_dump() if hasattr(element, 'model_dump') else element.dict() for element in pending_foreshadowing],
             "thematic_status": themes
         }
     

@@ -6,7 +6,7 @@ import click
 from pathlib import Path
 from .theatre import Theatre
 from .production import Production
-from .llm.playwright import EnhancedPlaywright
+from .llm.consolidated_playwright import Playwright, PlaywrightCapability
 from .llm import LLMManager
 from .llm.theatrical_memory import TheatricalMemory
 from .llm.quality_control import TheatricalQualityControl
@@ -43,12 +43,17 @@ def create_production(theme, output_file, setting, style, period, target_audienc
         run_manager = RunManager()
 
         # Create playwright
-        playwright = EnhancedPlaywright(
+        playwright = Playwright(
             name="Professional Playwright",
             llm_manager=llm_manager,
             memory=memory,
             advisor_manager=advisor_manager,
-            quality_control=quality_control
+            quality_control=quality_control,
+            enabled_capabilities=[
+                PlaywrightCapability.BASIC,
+                PlaywrightCapability.ITERATIVE_REFINEMENT,
+                PlaywrightCapability.NARRATIVE_STRUCTURE
+            ]
         )
 
         # Create a new run

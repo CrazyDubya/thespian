@@ -29,6 +29,10 @@ CONTINUITY REQUIREMENTS:
 6. Must create dramatic tension
 7. Must set up the next scene's events
 
+{uniqueness_constraint}
+
+{scene_directive}
+
 SCENE STRUCTURE REQUIREMENTS:
 1. Length: {min_length}-{max_length} characters
 2. Must have a clear beginning, middle, and end
@@ -38,21 +42,39 @@ SCENE STRUCTURE REQUIREMENTS:
 6. Must include sensory details (sight, sound, smell, etc.)
 7. Must have clear character motivations
 8. Must include emotional beats
+{memory_context}
+{narrative_context}
 
-FORMATTING REQUIREMENTS:
-1. Character names must be in ALL CAPS
-2. Stage directions must be in (parentheses)
-3. Each character's dialogue must be on a new line
-4. Stage directions must be on their own lines
-5. Technical cues (LIGHTS, SOUND, etc.) must be in [brackets]
-6. No markdown formatting
-7. No bold or italic text
-8. No special characters except for standard punctuation
-9. Each line of dialogue MUST be followed by detailed stage directions
-10. Each stage direction MUST include both physical actions AND emotional states
-11. Each technical cue MUST be specific and atmospheric
-12. Each character interaction MUST show both external dialogue and internal thoughts
-13. Each scene transition MUST be clearly marked with technical cues
+CRITICAL FORMATTING REQUIREMENTS (MUST BE FOLLOWED EXACTLY):
+1. Character names MUST be in ALL CAPS followed by a colon (example: LYRA:)
+2. Stage directions MUST be in (parentheses) on their own lines
+3. Technical cues MUST be in [brackets] on their own lines
+4. Dialogue must follow character names immediately after the colon
+5. NO markdown formatting whatsoever (no **, *, _, etc.)
+6. NO bold, italic, or any special formatting
+7. Use only standard ASCII characters and punctuation
+8. Every scene MUST include at least 3 stage directions in (parentheses)
+9. Every scene MUST include at least 2 technical cues in [brackets]
+10. Every character name MUST appear in ALL CAPS throughout the scene
+11. Character names can be single words (LYRA) or multiple words (SPECTRAL WOMAN)
+12. Each line of dialogue should show character emotion and intention
+13. Stage directions should describe physical actions, movements, and emotional states
+14. Technical cues should specify lighting, sound, or other technical elements
+
+EXAMPLE OF CORRECT FORMATTING:
+LYRA: (walking nervously to the window) I can't shake this feeling that something's watching us.
+
+(She turns suddenly, her eyes wide with concern)
+
+SPECTRAL WOMAN: (appearing from the shadows, voice echoing) Your instincts serve you well, child.
+
+[Dim lighting shifts to create an ethereal atmosphere]
+
+LYRA: (backing away, voice trembling) Who are you? What do you want?
+
+(The room seems to grow colder as the figure approaches)
+
+[Soft, haunting music begins to play]
 
 Format your response EXACTLY as follows:
 

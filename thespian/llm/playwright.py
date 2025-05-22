@@ -419,7 +419,7 @@ class EnhancedPlaywright(BaseModel):
                         feedback=opening_result["evaluation"],
                         timing_metrics=opening_result["timing_metrics"],
                         iteration_metrics=opening_result["iteration_metrics"],
-                        requirements=requirements.dict()
+                        requirements=requirements.model_dump() if hasattr(requirements, 'model_dump') else requirements.dict()
                     ))
                 if 'enhanced_result' in locals() and other_playwright.checkpoint_manager:
                     other_playwright.checkpoint_manager.save_checkpoint(enhancement_scene_id, CheckpointData(
@@ -429,7 +429,7 @@ class EnhancedPlaywright(BaseModel):
                         feedback=enhanced_result["evaluation"],
                         timing_metrics=enhanced_result["timing_metrics"],
                         iteration_metrics=enhanced_result["iteration_metrics"],
-                        requirements=requirements.dict()
+                        requirements=requirements.model_dump() if hasattr(requirements, 'model_dump') else requirements.dict()
                     ))
             except Exception as checkpoint_error:
                 logger.error(f"Failed to save final checkpoints: {str(checkpoint_error)}")

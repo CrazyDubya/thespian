@@ -120,14 +120,36 @@ class IterativeRefinementSystem(BaseModel):
                 requirements
             )
             
-            # Get refined scene from LLM
-            response = llm_invoke_func(refinement_prompt)
-            refined_scene = self._extract_scene_content(response)
-            
-            # Skip if extraction failed
-            if not refined_scene:
-                logger.warning(f"Failed to extract scene content from LLM response in iteration {iteration_number}")
-                continue
+            # Get refined scene from LLM with self-correction
+            max_retry_attempts = 2
+            refined_scene = None
+            for retry_attempt in range(max_retry_attempts + 1):
+                if retry_attempt > 0:
+                    # Add corrective feedback for retry
+                    correction_prompt = f"""CORRECTION NEEDED: Your previous response failed to generate a proper scene.
+
+Previous response that failed:
+{str(response)[:1000]}...
+
+Please provide a complete refined scene with:
+- Clear scene structure
+- Proper formatting with character names, stage directions, and technical cues
+- Substantive content that improves upon the original
+
+{refinement_prompt}"""
+                    response = llm_invoke_func(correction_prompt)
+                else:
+                    response = llm_invoke_func(refinement_prompt)
+                    
+                refined_scene = self._extract_scene_content(response)
+                
+                if refined_scene:
+                    break
+                else:
+                    logger.warning(f"Scene refinement attempt {retry_attempt + 1} failed to extract content")
+                    if retry_attempt == max_retry_attempts:
+                        logger.warning(f"Failed to extract scene content from LLM response in iteration {iteration_number}")
+                        continue  # Skip this iteration if all extraction attempts fail
                 
             # Evaluate refined scene
             latest_evaluation = self.quality_control.evaluate_scene(refined_scene, requirements)
@@ -176,7 +198,7 @@ class IterativeRefinementSystem(BaseModel):
             "refined_scene": current_scene,
             "initial_evaluation": initial_evaluation,
             "final_evaluation": latest_evaluation,
-            "iteration_metrics": [m.dict() for m in iteration_metrics],
+            "iteration_metrics": [m.model_dump() if hasattr(m, 'model_dump') else m.dict() for m in iteration_metrics],
             "iterations_performed": len(iteration_metrics),
             "overall_improvement": total_improvement
         }
@@ -300,20 +322,43 @@ class IterativeRefinementSystem(BaseModel):
             target_length=target_length
         )
         
-        # Get expanded scene from LLM
-        response = llm_invoke_func(expansion_prompt)
-        expanded_scene = self._extract_expanded_content(response)
-        
-        # Validate expansion
-        if not expanded_scene:
-            logger.warning("Failed to extract expanded scene content from LLM response")
-            return {
-                "expanded_scene": scene,
-                "original_length": current_length,
-                "final_length": current_length,
-                "expansion_ratio": 1.0,
-                "error": "Failed to extract expanded content"
-            }
+        # Get expanded scene from LLM with self-correction
+        max_retry_attempts = 2
+        expanded_scene = None
+        for retry_attempt in range(max_retry_attempts + 1):
+            if retry_attempt > 0:
+                # Add corrective feedback for retry
+                correction_prompt = f"""CORRECTION NEEDED: Your previous response failed to expand the scene properly.
+
+Previous response that failed:
+{str(response)[:1000]}...
+
+Please provide a properly expanded scene that:
+- Includes all content from the original scene
+- Adds substantial new content to reach {target_length} characters
+- Maintains narrative integrity and character consistency
+- Uses proper theatrical formatting
+
+{expansion_prompt}"""
+                response = llm_invoke_func(correction_prompt)
+            else:
+                response = llm_invoke_func(expansion_prompt)
+                
+            expanded_scene = self._extract_expanded_content(response)
+            
+            if expanded_scene and len(expanded_scene) > current_length:
+                break
+            else:
+                logger.warning(f"Scene expansion attempt {retry_attempt + 1} failed")
+                if retry_attempt == max_retry_attempts:
+                    logger.warning("Failed to extract expanded scene content from LLM response")
+                    return {
+                        "expanded_scene": scene,
+                        "original_length": current_length,
+                        "final_length": current_length,
+                        "expansion_ratio": 1.0,
+                        "error": "Failed to extract expanded content"
+                    }
         
         expanded_length = len(expanded_scene)
         expansion_ratio = expanded_length / current_length if current_length > 0 else 1.0

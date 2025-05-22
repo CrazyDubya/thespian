@@ -109,7 +109,7 @@ class MemoryEnhancedPlaywright(EnhancedPlaywright):
         memory_context = self._get_memory_context(requirements.act_number, requirements.scene_number)
         
         # Create a copy of the requirements with memory enhancements
-        req_dict = requirements.dict()
+        req_dict = requirements.model_dump() if hasattr(requirements, 'model_dump') else requirements.dict()
         
         # Add character information if available
         if memory_context.get("character_states") and len(memory_context["character_states"]) > 0:
@@ -279,7 +279,7 @@ class MemoryEnhancedPlaywright(EnhancedPlaywright):
         char_name = profile.name.upper()  # Convert to uppercase for character name in script
         
         # Ensure the character is in the scene
-        req_dict = requirements.dict()
+        req_dict = requirements.model_dump() if hasattr(requirements, 'model_dump') else requirements.dict()
         if char_name not in req_dict["characters"]:
             req_dict["characters"].append(char_name)
         
@@ -287,8 +287,8 @@ class MemoryEnhancedPlaywright(EnhancedPlaywright):
         dev_directives = f"""CHARACTER DEVELOPMENT FOCUS:
 Character: {profile.name}
 Background: {profile.background}
-Current Arc Stage: {profile.development_arc[-1].stage if profile.development_arc else "Not started"}
-Current Arc Description: {profile.development_arc[-1].description if profile.development_arc else "No development yet"}
+Current Arc Stage: {getattr(profile, 'development_arc', [])[-1].stage if getattr(profile, 'development_arc', []) and isinstance(getattr(profile, 'development_arc', []), list) else "Not started"}
+Current Arc Description: {getattr(profile, 'development_arc', [])[-1].description if getattr(profile, 'development_arc', []) and isinstance(getattr(profile, 'development_arc', []), list) else "No development yet"}
 Current Emotional State: {profile.get_current_emotional_state().emotion if profile.get_current_emotional_state() else "Unknown"}
 
 Development Goals:
