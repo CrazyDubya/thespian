@@ -11,7 +11,7 @@ from thespian.llm import LLMManager
 from thespian.llm.theatrical_memory import TheatricalMemory
 from thespian.llm.theatrical_advisors import AdvisorManager
 from thespian.llm.quality_control import TheatricalQualityControl
-from thespian.llm.playwright import EnhancedPlaywright, SceneRequirements
+from thespian.llm.consolidated_playwright import Playwright, SceneRequirements, PlaywrightCapability, create_playwright
 from thespian.llm.dialogue_system import DialogueSystem
 
 
@@ -24,11 +24,15 @@ def main():
     advisor_manager = AdvisorManager(llm_manager, memory)
     quality_control = TheatricalQualityControl()
 
-    # Create playwright
-    playwright = EnhancedPlaywright(
+    # Create playwright using factory function
+    playwright = create_playwright(
         name="Test Playwright",
         llm_manager=llm_manager,
         memory=memory,
+        capabilities=[
+            PlaywrightCapability.BASIC,
+            PlaywrightCapability.ITERATIVE_REFINEMENT
+        ],
         advisor_manager=advisor_manager,
         quality_control=quality_control,
     )

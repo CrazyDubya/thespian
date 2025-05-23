@@ -16,8 +16,7 @@ from rich.markdown import Markdown
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from thespian.llm import LLMManager
-from thespian.llm.memory_enhanced_playwright import MemoryEnhancedPlaywright
-from thespian.llm.playwright import SceneRequirements
+from thespian.llm.consolidated_playwright import Playwright, SceneRequirements, PlaywrightCapability, create_playwright
 from thespian.llm.enhanced_memory import EnhancedTheatricalMemory, EnhancedCharacterProfile
 from thespian.llm.theatrical_advisors import AdvisorManager
 from thespian.llm.quality_control import TheatricalQualityControl
@@ -41,20 +40,23 @@ def main():
     advisor_manager = AdvisorManager(llm_manager, memory)
     quality_control = TheatricalQualityControl()
     
-    # Create memory-enhanced playwright
+    # Create memory-enhanced playwright using the consolidated playwright with appropriate capabilities
     console.print("[bold]Creating memory-enhanced playwright...[/bold]")
-    playwright = MemoryEnhancedPlaywright(
+    playwright = create_playwright(
         name="Memory-Enhanced Playwright",
         llm_manager=llm_manager,
-        memory=memory,
-        enhanced_memory=memory,
+        memory=memory,  # The factory will automatically handle EnhancedTheatricalMemory
+        capabilities=[
+            PlaywrightCapability.BASIC,
+            PlaywrightCapability.MEMORY_ENHANCEMENT,  # Enable memory enhancement
+            PlaywrightCapability.CHARACTER_TRACKING,  # Enable character tracking
+            PlaywrightCapability.ITERATIVE_REFINEMENT  # Enable iterative refinement
+        ],
         advisor_manager=advisor_manager,
         quality_control=quality_control,
         model_type="ollama",  # Using local Ollama model
         refinement_max_iterations=2,  # Limit to 2 iterations for demo
         target_scene_length=3000,  # Target a medium-length scene
-        track_characters=True,
-        track_narrative=True,
         memory_integration_level=2  # Standard level of memory integration
     )
     

@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from thespian.llm.playwright import EnhancedPlaywright, SceneRequirements
+from thespian.llm.consolidated_playwright import Playwright, SceneRequirements, PlaywrightCapability, create_playwright
 from thespian.llm import LLMManager
 from thespian.llm.theatrical_memory import TheatricalMemory, StoryOutline
 from thespian.llm.theatrical_advisors import AdvisorManager
@@ -14,10 +14,11 @@ def basic_playwright():
     advisor_manager = AdvisorManager(llm_manager, memory)
     quality_control = TheatricalQualityControl()
     scene_processor = SceneProcessor()
-    playwright = EnhancedPlaywright(
+    playwright = create_playwright(
         name="TestAgent",
         llm_manager=llm_manager,
         memory=memory,
+        capabilities=[PlaywrightCapability.BASIC],
         advisor_manager=advisor_manager,
         quality_control=quality_control,
         scene_processor=scene_processor,

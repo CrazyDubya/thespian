@@ -4,7 +4,7 @@ Example of generating a full 3-act play with 5 scenes each.
 
 import os
 from thespian.llm import LLMManager
-from thespian.llm.playwright import EnhancedPlaywright, SceneRequirements
+from thespian.llm.consolidated_playwright import Playwright, SceneRequirements, PlaywrightCapability, create_playwright
 from thespian.llm.theatrical_memory import TheatricalMemory, CharacterProfile, StoryOutline
 from thespian.llm.manager import LLMResponseEncoder
 import logging
@@ -37,7 +37,7 @@ def create_character_profile(name: str, description: str, background: str) -> Ch
     )
 
 def generate_act(
-    playwright: EnhancedPlaywright,
+    playwright: Playwright,
     act_number: int,
     requirements: SceneRequirements,
     run_manager: RunManager,
@@ -210,11 +210,16 @@ def main():
     # Initialize quality control
     quality_control = TheatricalQualityControl()
     
-    # Create playwright
-    playwright = EnhancedPlaywright(
+    # Create playwright using factory function
+    playwright = create_playwright(
         name="Cyberpunk Playwright",
         llm_manager=llm_manager,
         memory=memory,
+        capabilities=[
+            PlaywrightCapability.BASIC,
+            PlaywrightCapability.ITERATIVE_REFINEMENT,
+            PlaywrightCapability.COLLABORATIVE
+        ],
         advisor_manager=advisor_manager,
         quality_control=quality_control,
         model_type="ollama"

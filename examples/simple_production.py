@@ -10,7 +10,7 @@ from rich.progress import Progress
 from rich.table import Table
 
 from thespian.llm import LLMManager
-from thespian.llm.playwright import EnhancedPlaywright, SceneRequirements
+from thespian.llm.consolidated_playwright import Playwright, SceneRequirements, PlaywrightCapability, create_playwright
 from thespian.llm.theatrical_memory import TheatricalMemory, CharacterProfile, StoryOutline
 from thespian.llm.theatrical_advisors import AdvisorManager
 from thespian.llm.quality_control import TheatricalQualityControl
@@ -26,20 +26,30 @@ def main():
     advisor_manager = AdvisorManager(llm_manager, memory)
     quality_control = TheatricalQualityControl()
 
-    # Create enhanced playwrights
-    ollama_playwright = EnhancedPlaywright(
+    # Create playwrights using factory function
+    ollama_playwright = create_playwright(
         name="Ollama",
         llm_manager=llm_manager,
         memory=memory,
+        capabilities=[
+            PlaywrightCapability.BASIC,
+            PlaywrightCapability.ITERATIVE_REFINEMENT,
+            PlaywrightCapability.COLLABORATIVE
+        ],
         advisor_manager=advisor_manager,
         quality_control=quality_control,
         model_type="ollama",
     )
 
-    grok_playwright = EnhancedPlaywright(
+    grok_playwright = create_playwright(
         name="Grok",
         llm_manager=llm_manager,
         memory=memory,
+        capabilities=[
+            PlaywrightCapability.BASIC,
+            PlaywrightCapability.ITERATIVE_REFINEMENT,
+            PlaywrightCapability.COLLABORATIVE
+        ],
         advisor_manager=advisor_manager,
         quality_control=quality_control,
         model_type="grok",
