@@ -572,10 +572,41 @@ class EnhancedPlaywright(BaseModel):
             logger.error(f"Error in act planning: {str(e)}")
             raise
 
-    def create_story_outline(self, theme: str, requirements: Dict[str, Any]) -> StoryOutline:
-        """Create a story outline with enhanced character and plot development."""
+    def create_story_outline(self, theme: str, requirements: Any = None) -> StoryOutline:
+        """Create a story outline with enhanced character and plot development.
+        
+        Args:
+            theme: The main theme or premise of the story
+            requirements: Either a dict of requirements or a list of themes
+        """
+        # Handle both signature styles
+        if isinstance(requirements, list):
+            # Called with (premise, themes) - convert to expected format
+            themes_list = requirements
+            requirements = {
+                'setting': 'Contemporary',
+                'style': 'Drama',
+                'period': 'Present',
+                'target_audience': 'General',
+                'themes': themes_list
+            }
+        elif requirements is None:
+            # No requirements provided
+            requirements = {
+                'setting': 'Modern day',
+                'style': 'Drama',
+                'period': 'Present',
+                'target_audience': 'General',
+                'themes': []
+            }
+        
+        # Build prompt with themes if provided
+        themes_str = ""
+        if requirements.get('themes'):
+            themes_str = f"\n        Themes to explore: {', '.join(requirements['themes'])}"
+        
         prompt = f"""Create a detailed story outline for a theatrical production with the following requirements:
-        Theme: {theme}
+        Theme/Premise: {theme}{themes_str}
         Setting: {requirements.get('setting', 'Modern day')}
         Style: {requirements.get('style', 'Drama')}
         Period: {requirements.get('period', 'Present')}
