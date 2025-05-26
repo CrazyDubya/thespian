@@ -205,10 +205,12 @@ class EnhancedPlaywright(BasePlaywright):
             
             # Refine the scene
             if self.refinement_system:
+                req_dict = requirements.model_dump() if hasattr(requirements, 'model_dump') else requirements.dict()
+                req_dict["scene_id"] = scene_id
                 refinement_result = self.refinement_system.refine_scene_iteratively(
                     expanded_scene,
                     lambda prompt: self.get_llm().invoke(prompt),
-                    {**requirements.model_dump() if hasattr(requirements, 'model_dump') else requirements.dict(), "scene_id": scene_id},
+                    req_dict,
                     progress_callback
                 )
                 final_scene = refinement_result["refined_scene"]

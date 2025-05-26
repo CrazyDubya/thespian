@@ -130,15 +130,53 @@ class LLMManager(BaseModel):
 
     def _initialize_llm(self) -> None:
         """Initialize the language model."""
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY environment variable is not set")
+        # Try OpenAI first
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key:
+            try:
+                self.llm = ChatOpenAI(
+                    model_name="gpt-4",
+                    temperature=0.7,
+                    openai_api_key=openai_key
+                )
+                logger.info("Using OpenAI GPT-4")
+                return
+            except Exception as e:
+                logger.warning(f"Failed to initialize OpenAI: {e}")
         
-        self.llm = ChatOpenAI(
-            model_name="gpt-4",
-            temperature=0.7,
-            openai_api_key=api_key
-        )
+        # Try Grok/XAI
+        xai_key = os.getenv("XAI_API_KEY")
+        if xai_key and self._grok:
+            logger.info("Using Grok as fallback")
+            # Create a wrapper to make Grok compatible with ChatOpenAI interface
+            class GrokWrapper:
+                def __init__(self, grok_instance):
+                    self.grok = grok_instance
+                    
+                def invoke(self, messages):
+                    if isinstance(messages, list) and len(messages) > 0:
+                        prompt = messages[-1].get('content', '') if isinstance(messages[-1], dict) else str(messages[-1])
+                    else:
+                        prompt = str(messages)
+                    return self.grok.invoke(prompt)
+            
+            self.llm = GrokWrapper(self._grok)
+            return
+            
+        # Default to Ollama
+        logger.info("Using Ollama as default")
+        class OllamaWrapper:
+            def __init__(self, ollama_instance):
+                self.ollama = ollama_instance
+                
+            def invoke(self, messages):
+                if isinstance(messages, list) and len(messages) > 0:
+                    prompt = messages[-1].get('content', '') if isinstance(messages[-1], dict) else str(messages[-1])
+                else:
+                    prompt = str(messages)
+                return self.ollama.invoke(prompt)
+        
+        self.llm = OllamaWrapper(self._ollama)
 
     @property
     def config(self):
