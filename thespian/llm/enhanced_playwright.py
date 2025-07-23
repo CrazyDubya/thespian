@@ -1,6 +1,18 @@
 """
 Enhanced playwright module with iterative refinement for theatrical productions.
+
+⚠️  DEPRECATED: This module is deprecated. Use consolidated_playwright.Playwright instead.
+This file is kept for backward compatibility and will be removed in a future version.
 """
+
+import warnings
+
+# Issue deprecation warning
+warnings.warn(
+    "thespian.llm.enhanced_playwright is deprecated. Use thespian.llm.consolidated_playwright.Playwright instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 from typing import Dict, Any, List, Optional, Callable, Union, TypeVar, cast
 from pydantic import BaseModel, Field, ConfigDict
@@ -205,10 +217,17 @@ class EnhancedPlaywright(BasePlaywright):
             
             # Refine the scene
             if self.refinement_system:
+                # Safely extract requirements data
+                if hasattr(requirements, 'model_dump'):
+                    req_data = requirements.model_dump()
+                else:
+                    req_data = requirements.dict()
+                req_data["scene_id"] = scene_id
+                
                 refinement_result = self.refinement_system.refine_scene_iteratively(
                     expanded_scene,
                     lambda prompt: self.get_llm().invoke(prompt),
-                    {**requirements.model_dump() if hasattr(requirements, 'model_dump') else requirements.dict(), "scene_id": scene_id},
+                    req_data,
                     progress_callback
                 )
                 final_scene = refinement_result["refined_scene"]
@@ -370,11 +389,19 @@ class EnhancedPlaywright(BasePlaywright):
                     "message": "Performing final collaborative refinement"
                 })
                 
+            # Refine the scene
             if self.refinement_system:
+                # Safely extract requirements data
+                if hasattr(requirements, 'model_dump'):
+                    req_data = requirements.model_dump()
+                else:
+                    req_data = requirements.dict()
+                req_data["scene_id"] = scene_id
+                
                 refinement_result = self.refinement_system.refine_scene_iteratively(
                     synthesized_scene,
                     lambda prompt: self.get_llm().invoke(prompt),
-                    {**requirements.model_dump() if hasattr(requirements, 'model_dump') else requirements.dict(), "scene_id": scene_id},
+                    req_data,
                     lambda data: progress_callback({**data, "phase": f"collaboration_refinement_{data['phase']}"}) if progress_callback else None
                 )
                 final_scene = refinement_result["refined_scene"]
