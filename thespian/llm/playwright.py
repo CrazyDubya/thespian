@@ -1,6 +1,18 @@
 """
 Enhanced playwright module for generating full theatrical productions.
+
+⚠️  DEPRECATED: This module is deprecated. Use consolidated_playwright.Playwright instead.
+This file is kept for backward compatibility and will be removed in a future version.
 """
+
+import warnings
+
+# Issue deprecation warning
+warnings.warn(
+    "thespian.llm.playwright is deprecated. Use thespian.llm.consolidated_playwright.Playwright instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 from typing import Dict, Any, List, Optional, Callable, Union, TypeVar, cast
 from pydantic import BaseModel, Field, ConfigDict
