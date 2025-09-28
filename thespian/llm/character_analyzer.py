@@ -105,7 +105,8 @@ class CharacterTracker(BaseModel):
             "SOUND", "MUSIC", "LIGHTS", "LIGHTING", "SET", "SCENE", "ACT", 
             "CURTAIN", "STAGE", "BACKDROP", "PROPS", "COSTUME", "MAKEUP",
             "EFFECTS", "SFX", "BGM", "FADE", "CUT", "ENTER", "EXIT",
-            "BLACKOUT", "SPOTLIGHT", "VOICEOVER", "NARRATOR", "END"
+            "BLACKOUT", "SPOTLIGHT", "VOICEOVER", "NARRATOR", "END",
+            "OPENING", "CLOSING", "INTERMISSION", "PAUSE", "CONTINUE"
         }
         
         character_names = []

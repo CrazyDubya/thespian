@@ -223,7 +223,7 @@ class EnhancedPlaywright(BasePlaywright):
                 else:
                     req_data = requirements.dict()
                 req_data["scene_id"] = scene_id
-                
+
                 refinement_result = self.refinement_system.refine_scene_iteratively(
                     expanded_scene,
                     lambda prompt: self.get_llm().invoke(prompt),
@@ -369,12 +369,17 @@ class EnhancedPlaywright(BasePlaywright):
                     "message": "Synthesizing collaborative contributions"
                 })
                 
+            if hasattr(requirements, 'model_dump'):
+                req_data = requirements.model_dump()
+            else:
+                req_data = requirements.dict()
+
             synthesis_prompt = ENHANCED_PROMPT_TEMPLATES["collaborative_synthesis"].format(
                 dialogue_content=opening_result["scene"],
                 narrative_content=enhanced_result["scene"],
                 technical_content="",  # Could be expanded with more collaborators
                 emotional_content="",  # Could be expanded with more collaborators
-                requirements=json.dumps(requirements.model_dump() if hasattr(requirements, 'model_dump') else requirements.dict())
+                requirements=json.dumps(req_data)
             )
             
             synthesis_response = self.get_llm().invoke(synthesis_prompt)

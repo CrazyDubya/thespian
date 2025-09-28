@@ -29,15 +29,25 @@ class BaseAgent(BaseModel):
 
     def _initialize_llm(self) -> None:
         """Initialize the language model."""
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY environment variable is not set")
-            
-        self.llm = ChatOpenAI(
-            model_name="gpt-4",
-            temperature=0.7,
-            openai_api_key=api_key
-        )
+        # Use the same LLM manager system as the rest of the framework
+        from thespian.llm import LLMManager
+        
+        try:
+            # Try OpenAI first
+            api_key = os.getenv("OPENAI_API_KEY")
+            if api_key:
+                self.llm = ChatOpenAI(
+                    model_name="gpt-4",
+                    temperature=0.7,
+                    openai_api_key=api_key
+                )
+                return
+        except Exception:
+            pass
+        
+        # Fall back to LLMManager system (supports Ollama/Grok)
+        llm_manager = LLMManager()
+        self.llm = llm_manager.llm
 
     def _initialize_tools(self) -> None:
         """Initialize agent-specific tools."""
@@ -63,14 +73,23 @@ class PlaywrightAgent(BaseAgent):
 
     def generate_concept(self, theme: str) -> Dict[str, Any]:
         """Generate a play concept based on the theme."""
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                ("system", "You are a playwright tasked with creating a theatrical concept."),
-                ("user", f"Create a concept for a play based on the theme: {theme}"),
-            ]
-        )
-        response = self.llm.invoke(prompt.format_messages())
-        return {"concept": response.content}
+        try:
+            # Try ChatOpenAI format first
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    ("system", "You are a playwright tasked with creating a theatrical concept."),
+                    ("user", f"Create a concept for a play based on the theme: {theme}"),
+                ]
+            )
+            response = self.llm.invoke(prompt.format_messages())
+            content = response.content if hasattr(response, 'content') else str(response)
+        except Exception:
+            # Fall back to simple string prompt for Ollama/other LLMs
+            prompt = f"You are a playwright. Create a theatrical concept for this theme: {theme}"
+            response = self.llm.invoke(prompt)
+            content = response.content if hasattr(response, 'content') else str(response)
+        
+        return {"concept": content}
 
     def write_script(self, concept: Dict[str, Any]) -> Dict[str, Any]:
         """Write a complete script based on the concept."""
@@ -149,14 +168,23 @@ class DirectorAgent(BaseAgent):
 
     def review_script(self, script: Dict[str, Any]) -> Dict[str, Any]:
         """Review the script and provide feedback."""
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                ("system", "You are a theatre director reviewing a script."),
-                ("user", f"Review this script and provide detailed feedback: {script['script']}"),
-            ]
-        )
-        response = self.llm.invoke(prompt.format_messages())
-        return {"feedback": response.content}
+        try:
+            # Try ChatOpenAI format first
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    ("system", "You are a theatre director reviewing a script."),
+                    ("user", f"Review this script and provide detailed feedback: {script['script']}"),
+                ]
+            )
+            response = self.llm.invoke(prompt.format_messages())
+            content = response.content if hasattr(response, 'content') else str(response)
+        except Exception:
+            # Fall back to simple string prompt
+            prompt = f"You are a theatre director. Review this script and provide detailed feedback: {script['script']}"
+            response = self.llm.invoke(prompt)
+            content = response.content if hasattr(response, 'content') else str(response)
+        
+        return {"feedback": content}
 
 
 class CharacterActorAgent(BaseAgent):
