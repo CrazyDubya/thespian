@@ -18,8 +18,7 @@ from rich.text import Text
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from thespian.llm import LLMManager
-from thespian.llm.playwright import EnhancedPlaywright as BasePlaywright, SceneRequirements
-from thespian.llm.enhanced_playwright import EnhancedPlaywright
+from thespian.llm.consolidated_playwright import Playwright, SceneRequirements, PlaywrightCapability, create_playwright
 from thespian.llm.theatrical_memory import TheatricalMemory, CharacterProfile, StoryOutline
 from thespian.llm.theatrical_advisors import AdvisorManager
 from thespian.llm.quality_control import TheatricalQualityControl
@@ -78,22 +77,30 @@ def main():
         scene_number=1
     )
     
-    # Create both playwright versions
+    # Create both playwright versions using the factory function
     console.print("[bold]Creating baseline and enhanced playwrights...[/bold]")
-    baseline_playwright = BasePlaywright(
+    
+    # Baseline playwright with just the basic capability
+    baseline_playwright = create_playwright(
         name="Baseline Playwright",
         llm_manager=llm_manager,
         memory=memory,
+        capabilities=[PlaywrightCapability.BASIC],
         advisor_manager=advisor_manager,
         quality_control=quality_control,
         model_type="ollama"
     )
     baseline_playwright.story_outline = story_outline
     
-    enhanced_playwright = EnhancedPlaywright(
+    # Enhanced playwright with additional capabilities
+    enhanced_playwright = create_playwright(
         name="Enhanced Playwright",
         llm_manager=llm_manager,
         memory=memory,
+        capabilities=[
+            PlaywrightCapability.BASIC,
+            PlaywrightCapability.ITERATIVE_REFINEMENT
+        ],
         advisor_manager=advisor_manager,
         quality_control=quality_control,
         model_type="ollama",

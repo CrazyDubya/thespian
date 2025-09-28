@@ -4,8 +4,8 @@ Test script for enhanced playwright collaboration with advisor integration.
 
 import os
 from thespian.llm import LLMManager
-from thespian.llm.playwright import EnhancedPlaywright, SceneRequirements, StoryOutline
-from thespian.llm.theatrical_memory import CharacterProfile, TheatricalMemory
+from thespian.llm.consolidated_playwright import Playwright, SceneRequirements, PlaywrightCapability, create_playwright
+from thespian.llm.theatrical_memory import CharacterProfile, TheatricalMemory, StoryOutline
 from thespian.llm.theatrical_advisors import AdvisorManager
 from thespian.llm.quality_control import TheatricalQualityControl
 from thespian.llm.dialogue_system import DialogueSystem
@@ -31,21 +31,29 @@ def test_enhanced_playwright_collaboration():
     memory = TheatricalMemory()
     quality_control = TheatricalQualityControl()
 
-    # Create enhanced playwrights
-    ollama_playwright = EnhancedPlaywright(
+    # Create enhanced playwrights using the factory function
+    ollama_playwright = create_playwright(
         name="Ollama",
         llm_manager=llm_manager,
         memory=memory,
         quality_control=quality_control,
         model_type="ollama",
+        capabilities=[
+            PlaywrightCapability.BASIC,
+            PlaywrightCapability.ITERATIVE_REFINEMENT
+        ]
     )
 
-    grok_playwright = EnhancedPlaywright(
+    grok_playwright = create_playwright(
         name="Grok",
         llm_manager=llm_manager,
         memory=memory,
         quality_control=quality_control,
         model_type="grok",
+        capabilities=[
+            PlaywrightCapability.BASIC,
+            PlaywrightCapability.ITERATIVE_REFINEMENT
+        ]
     )
 
     # Initialize story outline
@@ -344,13 +352,17 @@ def test_checkpoint_functionality():
     memory = TheatricalMemory()
     quality_control = TheatricalQualityControl()
 
-    # Create playwright
-    playwright = EnhancedPlaywright(
+    # Create playwright with checkpoint capability
+    playwright = create_playwright(
         name="Checkpoint Test",
         llm_manager=llm_manager,
         memory=memory,
         quality_control=quality_control,
         model_type="ollama",
+        capabilities=[
+            PlaywrightCapability.BASIC,
+            PlaywrightCapability.ITERATIVE_REFINEMENT
+        ]
     )
 
     # Define scene requirements
