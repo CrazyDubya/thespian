@@ -195,7 +195,10 @@ class Playwright(BaseModel):
     track_characters: bool = Field(default=True)
     track_narrative: bool = Field(default=True)
     memory_integration_level: int = Field(default=2, ge=1, le=3)  # 1=basic, 2=standard, 3=deep
-    
+
+    # Generation control
+    _generation_cancelled: bool = Field(default=False, exclude=True)
+
     def __init__(self, **data: Any) -> None:
         """Initialize the playwright with appropriate components."""
         super().__init__(**data)
@@ -244,7 +247,20 @@ class Playwright(BaseModel):
     def get_llm(self) -> Any:
         """Get the LLM instance."""
         return self.llm_manager.get_llm(self.model_type)
-    
+
+    def stop_generation(self) -> None:
+        """Request to stop the current scene generation."""
+        logger.info("Stop generation requested")
+        self._generation_cancelled = True
+
+    def reset_cancellation(self) -> None:
+        """Reset the cancellation flag."""
+        self._generation_cancelled = False
+
+    def is_generation_cancelled(self) -> bool:
+        """Check if generation has been cancelled."""
+        return self._generation_cancelled
+
     def _construct_scene_prompt(
         self,
         requirements: SceneRequirements,
@@ -344,8 +360,8 @@ class Playwright(BaseModel):
         )
     
     def generate_scene(
-        self, 
-        requirements: SceneRequirements, 
+        self,
+        requirements: SceneRequirements,
         previous_scene: Optional[str] = None,
         previous_feedback: Optional[Dict[str, Any]] = None,
         progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
@@ -354,37 +370,40 @@ class Playwright(BaseModel):
     ) -> Dict[str, Any]:
         """
         Generate a scene based on requirements.
-        
+
         Args:
             requirements: Scene requirements
             previous_scene: Optional previous scene content
             previous_feedback: Optional feedback from previous generation
             progress_callback: Optional callback for reporting progress
             use_refinement: Whether to use iterative refinement (overrides capability setting)
-            
+
         Returns:
             Dict containing the generated scene and metadata
         """
+        # Reset cancellation flag at the start
+        self.reset_cancellation()
+
         # Set generation type for directive building
         self._current_generation_type = generation_type or "basic"
-        
+
         # Determine if refinement should be used
         should_use_refinement = use_refinement if use_refinement is not None else (
             PlaywrightCapability.ITERATIVE_REFINEMENT in self.enabled_capabilities
         )
-        
+
         # Enhance requirements with memory if applicable
         if PlaywrightCapability.MEMORY_ENHANCEMENT in self.enabled_capabilities and self.memory_integration_level >= 2:
             enhanced_requirements = self._enhance_requirements_with_memory(requirements)
         else:
             enhanced_requirements = requirements
-        
+
         # Create a unique scene ID
         scene_id = str(uuid.uuid4())
-        
+
         # Start timing
         start_time = time.time()
-        
+
         # Report initial progress
         if progress_callback:
             progress_callback({
@@ -393,14 +412,24 @@ class Playwright(BaseModel):
                 "total_steps": 3 if should_use_refinement else 1,
                 "message": "Generating initial scene draft"
             })
-        
+
         try:
+            # Check for cancellation before initial generation
+            if self.is_generation_cancelled():
+                logger.info("Generation cancelled before initial scene generation")
+                raise InterruptedError("Scene generation was cancelled by user")
+
             # Generate initial scene
             initial_scene_result = self._generate_initial_scene(
                 enhanced_requirements, previous_scene, previous_feedback
             )
             initial_scene = initial_scene_result["scene"]
             initial_evaluation = initial_scene_result["evaluation"]
+
+            # Check for cancellation after initial generation
+            if self.is_generation_cancelled():
+                logger.info("Generation cancelled after initial scene generation")
+                raise InterruptedError("Scene generation was cancelled by user")
             
             # Stop here if refinement is disabled
             if not should_use_refinement:
@@ -425,7 +454,12 @@ class Playwright(BaseModel):
                     "total_steps": 3,
                     "message": "Refining scene content"
                 })
-            
+
+            # Check for cancellation before refinement
+            if self.is_generation_cancelled():
+                logger.info("Generation cancelled before refinement")
+                raise InterruptedError("Scene generation was cancelled by user")
+
             if self.refinement_system:
                 refinement_result = self.refinement_system.refine_scene_iteratively(
                     initial_scene,
@@ -433,7 +467,12 @@ class Playwright(BaseModel):
                     {**(enhanced_requirements.model_dump() if hasattr(enhanced_requirements, 'model_dump') else enhanced_requirements.dict()), "scene_id": scene_id},
                     progress_callback
                 )
-                
+
+                # Check for cancellation after refinement
+                if self.is_generation_cancelled():
+                    logger.info("Generation cancelled after refinement")
+                    raise InterruptedError("Scene generation was cancelled by user")
+
                 final_scene = refinement_result["refined_scene"]
                 final_evaluation = refinement_result["final_evaluation"]
                 
@@ -511,11 +550,81 @@ class Playwright(BaseModel):
                 )
             
             return result
-                
+
         except Exception as e:
             logger.error("Error in scene generation: " + str(e))
             raise
-    
+
+    async def generate_scene_content(
+        self,
+        requirements: SceneRequirements,
+        story_outline: Optional[StoryOutline] = None,
+        previous_scenes: Optional[str] = None,
+        progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        use_refinement: Optional[bool] = None,
+        generation_type: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Async wrapper for generate_scene that matches TUI expectations.
+
+        This method provides backwards compatibility with the TUI which expects:
+        - An async method
+        - Return dict with "text", "quality_score", and "critique" keys
+        - Parameters for story_outline and previous_scenes
+
+        Args:
+            requirements: Scene requirements
+            story_outline: Optional story outline (will update self.story_outline)
+            previous_scenes: Optional previous scene content
+            progress_callback: Optional callback for reporting progress
+            use_refinement: Whether to use iterative refinement
+            generation_type: Type of generation to perform
+
+        Returns:
+            Dict with keys: text, quality_score, critique, timing_metrics, iterations
+        """
+        # Update story outline if provided
+        if story_outline:
+            self.story_outline = story_outline
+
+        # Call the sync generate_scene method
+        import asyncio
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: self.generate_scene(
+                requirements=requirements,
+                previous_scene=previous_scenes,
+                previous_feedback=None,
+                progress_callback=progress_callback,
+                use_refinement=use_refinement,
+                generation_type=generation_type
+            )
+        )
+
+        # Map the result to TUI-expected format
+        evaluation = result.get("evaluation", {})
+
+        # Extract quality score from evaluation
+        quality_score = None
+        if isinstance(evaluation, dict):
+            quality_score = evaluation.get("overall_score") or evaluation.get("quality_score")
+
+        # Extract critique from evaluation
+        critique = None
+        if isinstance(evaluation, dict):
+            critique = evaluation.get("critique") or evaluation.get("summary")
+
+        return {
+            "text": result.get("scene", ""),
+            "quality_score": quality_score,
+            "critique": critique,
+            "timing_metrics": result.get("timing_metrics", {}),
+            "iterations": result.get("iterations", 1),
+            "scene_id": result.get("scene_id"),
+            "evaluation": evaluation,  # Include full evaluation for reference
+        }
+
     def _generate_initial_scene(
         self, 
         requirements: SceneRequirements, 

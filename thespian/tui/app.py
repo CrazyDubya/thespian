@@ -283,16 +283,16 @@ class ThespianTUI(App[None]):  # Specify typevar for App if not returning a valu
             self.notify(f"Mounting Error: {e}. Check logs.", severity="error", timeout=15)
 
         try:
-            # Start periodic cleanup of old checkpoints if playwright_instance exists
+            # Start periodic cleanup of old checkpoints if playwright exists
             if (
-                hasattr(self, "playwright_instance")
-                and self.playwright_instance
-                and hasattr(self.playwright_instance, "CHECKPOINT_TTL_SECONDS")
-                and hasattr(self.playwright_instance, "_cleanup_old_checkpoints")
+                hasattr(self, "playwright")
+                and self.playwright
+                and hasattr(self.playwright, "CHECKPOINT_TTL_SECONDS")
+                and hasattr(self.playwright, "_cleanup_old_checkpoints")
             ):
                 self.set_interval(
-                    self.playwright_instance.CHECKPOINT_TTL_SECONDS,
-                    self.playwright_instance._cleanup_old_checkpoints,
+                    self.playwright.CHECKPOINT_TTL_SECONDS,
+                    self.playwright._cleanup_old_checkpoints,
                 )
                 self.app.log("--- Periodic playwright checkpoint cleanup scheduled. ---")
             else:
@@ -405,17 +405,23 @@ class ThespianTUI(App[None]):  # Specify typevar for App if not returning a valu
     async def on_stop_generation(self, message: StopGeneration) -> None:
         """Handle request to stop scene generation."""
         self.app.log("--- Stop Generation message received in App ---")
-        if self.playwright_instance and self.state.is_generating:
-            # TODO: Implement self.playwright_instance.stop_generation()
+        if self.playwright and self.state.is_generating:
+            # Request playwright to stop generation
+            self.playwright.stop_generation()
             self.state.is_generating = False
             self.state.error_message = "Generation stopped by user."
-            # If SceneWorkspace has a set_generating_state method, call it:
-            # scene_workspace = self.query_one(SceneWorkspace)
-            # scene_workspace.set_generating_state(False)
+
+            # Update workspace if it has set_generating_state method
+            try:
+                scene_workspace = self.query_one("#scene_workspace", SceneWorkspace)
+                if hasattr(scene_workspace, 'set_generating_state'):
+                    scene_workspace.set_generating_state(False)
+                scene_workspace.generation_in_progress = False
+            except Exception as e:
+                self.app.log.error(f"Error updating workspace state: {e}")
+
             self.query_one("#status_bar", StatusBar).update_status(self.state)
-            self.notify(
-                "Scene generation stopped (TODO: implement interruption).", severity="warning"
-            )
+            self.notify("Scene generation stopped.", severity="warning")
         else:
             self.notify("Nothing to stop.", severity="warning")
 
@@ -459,6 +465,7 @@ class ThespianTUI(App[None]):  # Specify typevar for App if not returning a valu
         scene_workspace = self.query_one("#scene_workspace", SceneWorkspace)
         scene_workspace.update_status("Initiating generation...")
         scene_workspace.is_generating = True  # Set generating flag
+        self.state.is_generating = True  # Set state flag
 
         # Log before calling run_worker
         self.app.log(
@@ -475,6 +482,7 @@ class ThespianTUI(App[None]):  # Specify typevar for App if not returning a valu
                 f"--- _initiate_generation ERROR: Failed to start worker: {e} ---", level="error"
             )
             scene_workspace.is_generating = False  # Reset flag on error
+            self.state.is_generating = False  # Reset state flag on error
             self.app_notify(f"Failed to start generation worker: {e}", severity="error")
 
     async def _run_generation(self, scene_id: str) -> None:
@@ -572,7 +580,7 @@ class ThespianTUI(App[None]):  # Specify typevar for App if not returning a valu
             return
 
         try:
-            if not self.playwright_instance:
+            if not self.playwright:
                 self.app_log.warning(
                     "--- _run_generation: Playwright instance not initialized. Attempting init. ---"
                 )
@@ -580,7 +588,7 @@ class ThespianTUI(App[None]):  # Specify typevar for App if not returning a valu
                 # However, direct await from a sync worker is problematic. This init should ideally happen before starting worker.
                 # For now, if it's not there, we might have to fail or reconsider init strategy.
                 # Let's assume _initialize_playwright was called in on_mount or similar main-thread context.
-                if not self.playwright_instance:
+                if not self.playwright:
                     self.app_log.error(
                         "--- _run_generation: Playwright instance STILL not available. Critical init failure. Aborting. ---"
                     )
@@ -597,10 +605,8 @@ class ThespianTUI(App[None]):  # Specify typevar for App if not returning a valu
             def progress_callback_adapter(progress_data: Dict[str, Any]):
                 self._handle_generation_progress(scene_id, progress_data)
 
-            # playwright_instance.generate_scene_content is assumed to be a blocking call here if run in a worker.
-            # If it's async, _run_generation shouldn't be run in a worker with thread=True but managed by asyncio.
-            # For now, proceeding with assumption it's blocking or internally manages its async operations appropriately for this call.
-            generated_content_data = await self.playwright_instance.generate_scene_content(
+            # playwright.generate_scene_content is now an async method that wraps the sync generate_scene
+            generated_content_data = await self.playwright.generate_scene_content(
                 requirements=requirements_obj,
                 story_outline=self.state.story_outline,
                 previous_scenes=self.state.get_previous_scenes_summary(
@@ -634,6 +640,15 @@ class ThespianTUI(App[None]):  # Specify typevar for App if not returning a valu
                     f"--- _run_generation: No content data received for '{scene.name}'. ---"
                 )
 
+        except InterruptedError as e:
+            # User cancelled generation
+            self.app_log.info(
+                f"--- _run_generation: Generation cancelled by user for scene '{scene.name}' ---"
+            )
+            scene.content = scene.content or "Generation cancelled by user."
+            scene.generation_log.append(f"[{datetime.now().isoformat()}] Generation cancelled by user")
+            scene.status = "draft"  # Leave as draft if cancelled
+            scene_workspace.update_status("Generation cancelled.")
         except Exception as e:
             self.app_log.error(
                 f"--- _run_generation: Error during generation for scene '{scene.name}': {e} ---",
@@ -647,6 +662,7 @@ class ThespianTUI(App[None]):  # Specify typevar for App if not returning a valu
             scene.update_timestamp()
             self.state.save_scene(scene.id)  # state method, not direct UI
             scene_workspace.generation_in_progress = False
+            self.state.is_generating = False
             self.update_ui()
             self.app_log(
                 f"--- _run_generation: Process finished for scene '{scene.name}'. Status: {scene.status} ---"
@@ -759,19 +775,6 @@ class ThespianTUI(App[None]):  # Specify typevar for App if not returning a valu
         """Show the help screen."""
         self.app.log("--- Show Help action triggered ---")
         self.push_screen(HelpScreen())
-
-    async def on_stop_generation(self, message: StopGeneration) -> None:
-        """Handle request to stop scene generation."""
-        self.app.log("--- Stop Generation message received in App ---")
-        if self.playwright_instance and self.state.is_generating:
-            self.playwright_instance.stop_generation()  # Assuming playwright has such a method
-            self.state.is_generating = False
-            self.state.error_message = "Generation stopped by user."
-            self.query_one("#scene_workspace", SceneWorkspace).set_generating_state(False)
-            self.query_one("#status_bar", StatusBar).update_status(self.state)
-            self.notify("Scene generation stopped.")
-        else:
-            self.notify("Nothing to stop.", severity="warning")
 
     async def on_generate_scene_content(self, message: GenerateSceneContent) -> None:
         """Handle request to generate scene content from workspace."""
