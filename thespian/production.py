@@ -1,5 +1,26 @@
 """
-Production class for managing theatrical productions.
+Production module for managing theatrical productions.
+
+This module defines the Production class which represents a complete theatrical
+production. It encapsulates the script, metadata, production notes, and all
+elements needed to stage a theatrical work.
+
+The Production class serves as the output of the Theatre's creative process,
+containing:
+    - The complete script with all acts and scenes
+    - Character descriptions and requirements
+    - Set and costume designs
+    - Staging notes and directions
+    - Production metadata and configuration
+
+Example Usage:
+    >>> from thespian.production import Production
+    >>> 
+    >>> production = Production(
+    ...     theme="A tale of redemption",
+    ...     script={"act1": {...}, "act2": {...}}
+    ... )
+    >>> production.update_script(new_script_data)
 """
 
 from typing import Dict, Any, Optional
@@ -10,6 +31,30 @@ from datetime import datetime
 class Production(BaseModel):
     """
     Represents a theatrical production with all its components.
+    
+    The Production class encapsulates all elements of a theatrical work,
+    from the initial theme through the complete script, character development,
+    and design elements. It tracks the production status and provides
+    methods for updating and managing production elements.
+    
+    Attributes:
+        theme (str): The central theme or concept of the production.
+        created_at (datetime): Timestamp when the production was created.
+        script (Optional[Dict[str, Any]]): The complete script data structure,
+            typically containing acts, scenes, and dialogue.
+        design (Optional[Dict[str, Any]]): Design elements including sets,
+            costumes, lighting, and sound.
+        characters (Dict[str, Dict[str, Any]]): Character information mapped
+            by character name, including descriptions and actor assignments.
+        status (str): Current production status (draft, script_updated,
+            design_updated, ready, etc.).
+    
+    Example:
+        >>> production = Production(theme="Love and betrayal")
+        >>> production.update_script({"act1": scene_data})
+        >>> production.update_design({"sets": set_descriptions})
+        >>> print(production.status)
+        "design_updated"
     """
 
     theme: str = Field(..., description="The theme or concept of the production")
