@@ -2,7 +2,39 @@
 Centralized configuration management for the Thespian framework.
 
 This module provides a unified configuration system that consolidates
-all the scattered configuration patterns in the codebase.
+all the scattered configuration patterns in the codebase. It supports
+environment variables, JSON configuration files, and programmatic
+configuration through a clean, type-safe API.
+
+The configuration system manages:
+    - LLM provider settings (API keys, models, parameters)
+    - Performance optimization settings (caching, batching, timeouts)
+    - Quality control thresholds and parameters
+    - Memory management configuration
+    - Theatre and production settings
+
+Example Usage:
+    >>> from thespian.config_manager import get_config, update_config
+    >>> 
+    >>> # Get current configuration
+    >>> config = get_config()
+    >>> print(config.llm.model_name)
+    >>> 
+    >>> # Update configuration
+    >>> update_config({
+    ...     "llm": {"temperature": 0.8, "max_tokens": 2000},
+    ...     "quality": {"quality_threshold": 0.75}
+    ... })
+    >>> 
+    >>> # Load from file
+    >>> from thespian.config_manager import load_config_from_file
+    >>> config = load_config_from_file("my_config.json")
+
+Configuration can be loaded from:
+    - Environment variables (THESPIAN_* prefix)
+    - JSON configuration files
+    - Programmatic Python dictionaries
+    - Default values with sensible settings
 """
 
 import os
@@ -18,7 +50,37 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class LLMConfig:
-    """Configuration for LLM providers."""
+    """
+    Configuration for LLM (Large Language Model) providers.
+    
+    This class encapsulates all settings related to LLM integration,
+    including API credentials, model selection, and generation parameters.
+    
+    Attributes:
+        provider (str): The LLM provider name (e.g., "openai", "anthropic", "ollama").
+            Default: "openai"
+        model_name (str): The specific model to use (e.g., "gpt-4", "claude-3").
+            Default: "gpt-4"
+        temperature (float): Controls randomness in generation (0.0-2.0).
+            Higher values make output more creative/random.
+            Default: 0.7
+        max_tokens (Optional[int]): Maximum tokens to generate per request.
+            None means use provider's default.
+        timeout (int): Request timeout in seconds.
+            Default: 30
+        api_key (Optional[str]): API authentication key. Can be loaded from
+            environment variables.
+        base_url (Optional[str]): Custom API endpoint URL for self-hosted
+            or alternative providers.
+    
+    Example:
+        >>> llm_config = LLMConfig(
+        ...     provider="openai",
+        ...     model_name="gpt-4",
+        ...     temperature=0.8,
+        ...     max_tokens=2000
+        ... )
+    """
     provider: str = "openai"
     model_name: str = "gpt-4"
     temperature: float = 0.7
